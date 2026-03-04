@@ -1,9 +1,10 @@
-# anime-sama-cli
+# Anime-Sama-cli
 Regarder ou télécharger vos animés en VF/VOSTFR depuis votre terminal.
 =======
-# Anime-Sama CLI
 
-Regarder ou télécharger vos animés en VF/VOSTFR depuis votre terminal.
+
+https://github.com/user-attachments/assets/3a1f9c90-4c87-468e-874e-b5e420dce2bc
+
 
 ---
 
