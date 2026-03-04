@@ -93,4 +93,3 @@ anime-sama --set-lang
 ```bash
 anime-sama --help
 ```
->>>>>>> 702547e (Initial commit: anime-sama CLI (regarder/télécharger animés VF/VOSTFR))
