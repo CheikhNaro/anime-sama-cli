@@ -222,3 +222,6 @@ class Season:
         if not isinstance(value, Season):
             return False
         return self.url == value.url
+
+    def __hash__(self) -> int:
+        return hash(self.url)

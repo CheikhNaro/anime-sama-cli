@@ -312,6 +312,7 @@ def _fzf_select(
     ]
     if multi:
         cmd.append("-m")
+        cmd.append("--bind=space:toggle")
 
     if catalogues_for_preview and _terminal_supports_images():
         try:
