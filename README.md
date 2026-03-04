@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # anime-sama-cli
 Regarder ou télécharger vos animés en VF/VOSTFR depuis votre terminal.
 =======
