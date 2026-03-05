@@ -34,6 +34,7 @@ CONFIG_DIR = Path(
     os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
 ) / "anime-sama-cli"
 CONFIG_FILE = CONFIG_DIR / "config.json"
+HISTORY_FILE = CONFIG_DIR / "history.json"
 ANIME_SAMA_API_CONFIG_DIR = Path(
     os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
 ) / "anime-sama_api"
@@ -130,6 +131,38 @@ bans = []
 '''
     with open(ANIME_SAMA_API_CONFIG_FILE, "w", encoding="utf-8") as f:
         f.write(toml_content)
+
+
+# ===== HISTORIQUE =====
+
+def _load_history() -> list[dict[str, Any]]:
+    """Charge l'historique des animés regardés (anime, season, episode)."""
+    if not HISTORY_FILE.exists():
+        return []
+    try:
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def _save_history(entries: list[dict[str, Any]]) -> None:
+    """Sauvegarde l'historique."""
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(entries, f, indent=2, ensure_ascii=False)
+
+
+def _add_to_history(anime_name: str, season: int, episode: int) -> None:
+    """Ajoute ou met à jour l'entrée pour cet animé (dernier épisode regardé)."""
+    name = (anime_name or "").strip()
+    if not name:
+        return
+    entries = _load_history()
+    entries = [e for e in entries if (e.get("anime") or "").strip() != name]
+    entries.insert(0, {"anime": name, "season": season, "episode": episode})
+    _save_history(entries)
 
 
 def first_run_wizard() -> None:
@@ -392,14 +425,16 @@ async def _search_catalogues(query: str):
 
 # ===== MENUS =====
 
-def _menu_main() -> Literal["regarder", "télécharger", "quitter"] | None:
-    """Menu principal. Flèches ↑↓ pour naviguer, Entrée pour valider. Raccourcis : (R), (T), (q)."""
+def _menu_main() -> Literal["regarder", "télécharger", "historique", "quitter"] | None:
+    """Menu principal. Flèches ↑↓ pour naviguer, Entrée pour valider. Raccourcis : (R), (T), (H), (q)."""
     options = [
         ("Regarder un animé", "regarder"),
         ("Télécharger un animé", "télécharger"),
+        ("Voir l'historique", "historique"),
         ("Quitter", "quitter"),
     ]
     index = 0
+    shortcut_map = {"regarder": "R", "télécharger": "T", "historique": "H", "quitter": "q"}
     while True:
         clear_screen()
         print(BOLD + CYAN + "  🎬 ANIME-SAMA" + RESET)
@@ -407,7 +442,7 @@ def _menu_main() -> Literal["regarder", "télécharger", "quitter"] | None:
         print()
         for i, (label, _) in enumerate(options):
             prefix = "  " + GREEN + "▶ " + RESET if i == index else "    "
-            shortcut = {"regarder": "R", "télécharger": "T", "quitter": "q"}[options[i][1]]
+            shortcut = shortcut_map[options[i][1]]
             print(prefix + GREEN + f"({shortcut})" + RESET + f" {label}")
         print()
         ch = _read_key()
@@ -421,6 +456,8 @@ def _menu_main() -> Literal["regarder", "télécharger", "quitter"] | None:
             return "regarder"
         elif ch == "t":
             return "télécharger"
+        elif ch == "h":
+            return "historique"
         elif ch == "q":
             return "quitter"
 
@@ -552,6 +589,26 @@ def _menu_after_play(
             return "menu"
         elif ch == "q":
             return "quitter"
+
+
+def _show_history() -> None:
+    """Affiche la liste des animés déjà regardés (anime - Sx, Epy), puis attend une touche pour revenir."""
+    clear_screen()
+    print(BOLD + CYAN + "  📜 Historique des animés regardés" + RESET)
+    print(GREEN + "  ─────────────────────────" + RESET)
+    print()
+    entries = _load_history()
+    if not entries:
+        print(YELLOW + "  Aucun animé regardé pour le moment." + RESET)
+    else:
+        for e in entries:
+            anime = (e.get("anime") or "").strip()
+            s = e.get("season", 1)
+            ep = e.get("episode", 0)
+            print("  " + GREEN + "•" + RESET + f" {anime} - S{s}, Ep{ep}")
+    print()
+    print("  Appuyez sur une touche pour revenir au menu...")
+    _read_key()
 
 
 # L'API ne prend pas en charge le téléchargement des scans ; on affiche uniquement une alerte.
@@ -829,8 +886,11 @@ async def _run_watch_flow(config: dict[str, str]) -> bool:
         if not selected_episode:
             continue
 
+        season_index = next((i for i, s in enumerate(seasons) if s.name == selected_season.name), 0)
         # Lecture
         ep_num = idx_ep + 1
+        anime_name = (catalogue.name or "").strip()
+        _add_to_history(anime_name, season_index + 1, ep_num)
         print()
         print(BOLD + CYAN + f"Épisode N°{ep_num} en cours de visionnage ..." + RESET)
         print()
@@ -862,6 +922,7 @@ async def _run_watch_flow(config: dict[str, str]) -> bool:
                 has_prev = True
                 has_next = idx_ep < len(episodes) - 1
                 is_last_ep = idx_ep == len(episodes) - 1
+                _add_to_history(anime_name, season_index + 1, ep_num)
                 print()
                 print(BOLD + CYAN + f"Épisode N°{ep_num} en cours de visionnage ..." + RESET)
                 print()
@@ -878,6 +939,7 @@ async def _run_watch_flow(config: dict[str, str]) -> bool:
                 has_next = True
                 has_prev = idx_ep > 0
                 is_last_ep = False
+                _add_to_history(anime_name, season_index + 1, ep_num)
                 print()
                 print(BOLD + CYAN + f"Épisode N°{ep_num} en cours de visionnage ..." + RESET)
                 print()
@@ -905,6 +967,7 @@ async def _run_watch_flow(config: dict[str, str]) -> bool:
                 has_next = len(episodes) > 1
                 is_last_ep = len(episodes) == 1
                 has_next_season = season_index < len(seasons) - 1
+                _add_to_history(anime_name, season_index + 1, ep_num)
                 print()
                 print(BOLD + CYAN + f"Épisode N°{ep_num} en cours de visionnage ..." + RESET)
                 print()
@@ -1118,6 +1181,8 @@ async def _async_main() -> None:
                 clear_screen()
                 print(GREEN + "À bientôt !" + RESET)
                 return
+        elif action == "historique":
+            _show_history()
         elif action == "télécharger":
             stay = await _run_download_flow(config)
             if not stay:
