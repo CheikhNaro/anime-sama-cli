@@ -393,50 +393,81 @@ async def _search_catalogues(query: str):
 # ===== MENUS =====
 
 def _menu_main() -> Literal["regarder", "télécharger", "quitter"] | None:
-    """Menu principal. Raccourcis : (R) Regarder, (T) Télécharger, (q) Quitter."""
-    clear_screen()
-    print(BOLD + CYAN + "  🎬 ANIME-SAMA" + RESET)
-    print(GREEN + "  ─────────────────────────" + RESET)
-    print()
-    print("  " + GREEN + "(R)" + RESET + " Regarder un animé")
-    print("  " + GREEN + "(T)" + RESET + " Télécharger un animé")
-    print("  " + GREEN + "(q)" + RESET + " Quitter")
-    print()
-    ch = _read_single_key()
-    if ch == "r":
-        return "regarder"
-    if ch == "t":
-        return "télécharger"
-    if ch == "q":
-        return "quitter"
-    return "quitter"
+    """Menu principal. Flèches ↑↓ pour naviguer, Entrée pour valider. Raccourcis : (R), (T), (q)."""
+    options = [
+        ("Regarder un animé", "regarder"),
+        ("Télécharger un animé", "télécharger"),
+        ("Quitter", "quitter"),
+    ]
+    index = 0
+    while True:
+        clear_screen()
+        print(BOLD + CYAN + "  🎬 ANIME-SAMA" + RESET)
+        print(GREEN + "  ─────────────────────────" + RESET)
+        print()
+        for i, (label, _) in enumerate(options):
+            prefix = "  " + GREEN + "▶ " + RESET if i == index else "    "
+            shortcut = {"regarder": "R", "télécharger": "T", "quitter": "q"}[options[i][1]]
+            print(prefix + GREEN + f"({shortcut})" + RESET + f" {label}")
+        print()
+        ch = _read_key()
+        if ch == "up":
+            index = (index - 1) % len(options)
+        elif ch == "down":
+            index = (index + 1) % len(options)
+        elif ch == "enter":
+            return options[index][1]
+        elif ch == "r":
+            return "regarder"
+        elif ch == "t":
+            return "télécharger"
+        elif ch == "q":
+            return "quitter"
 
 
 def _menu_search() -> Literal["recherche", "catalogue", "menu", "quitter"] | None:
-    """Menu de recherche. Raccourcis : (S) Recherche par nom, (C) Catalogue, (m) Menu, (q) Quitter."""
-    clear_screen()
-    print(BOLD + CYAN + "  🔍 Recherche" + RESET)
-    print(GREEN + "  ─────────────────────────" + RESET)
-    print()
-    print("  " + GREEN + "(S)" + RESET + " Rechercher directement le nom de l'animé")
-    print("  " + GREEN + "(C)" + RESET + " Recherche dynamique dans le catalogue")
-    print("  " + GREEN + "(m)" + RESET + " Revenir au menu principal")
-    print("  " + GREEN + "(q)" + RESET + " Quitter")
-    print()
-    ch = _read_single_key()
-    if ch == "s":
-        return "recherche"
-    if ch == "c":
-        return "catalogue"
-    if ch == "m":
-        return "menu"
-    if ch == "q":
-        return "quitter"
-    return "quitter"
+    """Menu de recherche. Flèches ↑↓ pour naviguer, Entrée pour valider. Raccourcis : (S), (C), (m), (q)."""
+    options = [
+        ("Rechercher directement le nom de l'animé", "recherche"),
+        ("Recherche dynamique dans le catalogue", "catalogue"),
+        ("Revenir au menu principal", "menu"),
+        ("Quitter", "quitter"),
+    ]
+    index = 0
+    while True:
+        clear_screen()
+        print(BOLD + CYAN + "  🔍 Recherche" + RESET)
+        print(GREEN + "  ─────────────────────────" + RESET)
+        print()
+        for i, (label, _) in enumerate(options):
+            prefix = "  " + GREEN + "▶ " + RESET if i == index else "    "
+            shortcut = {"recherche": "S", "catalogue": "C", "menu": "m", "quitter": "q"}[options[i][1]]
+            print(prefix + GREEN + f"({shortcut})" + RESET + f" {label}")
+        print()
+        ch = _read_key()
+        if ch == "up":
+            index = (index - 1) % len(options)
+        elif ch == "down":
+            index = (index + 1) % len(options)
+        elif ch == "enter":
+            return options[index][1]
+        elif ch == "s":
+            return "recherche"
+        elif ch == "c":
+            return "catalogue"
+        elif ch == "m":
+            return "menu"
+        elif ch == "q":
+            return "quitter"
 
 
 def _read_single_key() -> str:
-    """Lit une seule touche (sans Entrée). Retourne le caractère en minuscule."""
+    """Lit une seule touche (sans Entrée). Retourne le caractère en minuscule ou 'up'/'down'/'enter'."""
+    return _read_key()
+
+
+def _read_key() -> str:
+    """Lit une touche : caractère en minuscule, ou 'up', 'down', 'enter' pour flèches et Entrée."""
     try:
         import termios
         import tty
@@ -444,10 +475,24 @@ def _read_single_key() -> str:
         old = termios.tcgetattr(fd)
         try:
             tty.setraw(fd)
-            ch = sys.stdin.read(1).lower()
+            ch = sys.stdin.read(1)
+            if ch == "\x1b":  # ESC → séquence flèches (ESC [ A/B/C/D ou ESC O A/B/C/D)
+                n = sys.stdin.read(1)
+                if n == "[" or n == "O":
+                    code = sys.stdin.read(1)
+                    if code == "A":
+                        return "up"
+                    if code == "B":
+                        return "down"
+                    if code == "C":
+                        return "right"
+                    if code == "D":
+                        return "left"
+            if ch in ("\r", "\n"):
+                return "enter"
+            return ch.lower() if ch else ""
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
-        return ch
     except (ImportError, OSError):
         try:
             line = input("Votre choix : ").strip().lower()
@@ -464,36 +509,49 @@ def _menu_after_play(
     has_next_season: bool,
     anime_name: str = "",
 ) -> Literal["suivant", "précédent", "saison_suivante", "menu", "quitter"] | None:
-    """Après fermeture du lecteur : message + touches n/p/m/q (et s pour saison suivante)."""
-    clear_screen()
-    if anime_name.strip():
-        msg = f"Vous venez de regarder l'épisode {episode_number} de {anime_name.strip()}."
-    else:
-        msg = f"Vous venez de regarder l'épisode {episode_number}."
-    print(CYAN + msg + RESET)
-    print(CYAN + "Que faire maintenant ?" + RESET)
-    print()
+    """Après fermeture du lecteur. Flèches ↑↓ pour naviguer, Entrée pour valider. Touches n/p/s/m/q."""
+    options: list[tuple[str, str]] = []
     if has_next:
-        print("  " + GREEN + "(n)" + RESET + " Épisode suivant")
+        options.append(("Épisode suivant", "suivant"))
     if has_prev:
-        print("  " + GREEN + "(p)" + RESET + " Épisode précédent")
+        options.append(("Épisode précédent", "précédent"))
     elif is_last_ep_of_season and has_next_season:
-        print("  " + GREEN + "(s)" + RESET + " Saison suivante")
-    print("  " + GREEN + "(m)" + RESET + " Revenir au menu principal")
-    print("  " + GREEN + "(q)" + RESET + " Quitter")
-    print()
-    ch = _read_single_key()
-    if ch == "n" and has_next:
-        return "suivant"
-    if ch == "p" and has_prev:
-        return "précédent"
-    if ch == "s" and is_last_ep_of_season and has_next_season:
-        return "saison_suivante"
-    if ch == "m":
-        return "menu"
-    if ch == "q":
-        return "quitter"
-    return "quitter"
+        options.append(("Saison suivante", "saison_suivante"))
+    options.append(("Revenir au menu principal", "menu"))
+    options.append(("Quitter", "quitter"))
+    index = 0
+    shortcuts = {"suivant": "n", "précédent": "p", "saison_suivante": "s", "menu": "m", "quitter": "q"}
+    while True:
+        clear_screen()
+        if anime_name.strip():
+            msg = f"Vous venez de regarder l'épisode {episode_number} de {anime_name.strip()}."
+        else:
+            msg = f"Vous venez de regarder l'épisode {episode_number}."
+        print(CYAN + msg + RESET)
+        print(CYAN + "Que faire maintenant ?" + RESET)
+        print()
+        for i, (label, action) in enumerate(options):
+            prefix = "  " + GREEN + "▶ " + RESET if i == index else "    "
+            short = shortcuts.get(action, "")
+            print(prefix + GREEN + f"({short})" + RESET + f" {label}")
+        print()
+        ch = _read_key()
+        if ch == "up":
+            index = (index - 1) % len(options)
+        elif ch == "down":
+            index = (index + 1) % len(options)
+        elif ch == "enter":
+            return options[index][1]
+        elif ch == "n" and has_next:
+            return "suivant"
+        elif ch == "p" and has_prev:
+            return "précédent"
+        elif ch == "s" and is_last_ep_of_season and has_next_season:
+            return "saison_suivante"
+        elif ch == "m":
+            return "menu"
+        elif ch == "q":
+            return "quitter"
 
 
 # L'API ne prend pas en charge le téléchargement des scans ; on affiche uniquement une alerte.
