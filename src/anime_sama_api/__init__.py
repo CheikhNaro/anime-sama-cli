@@ -2,7 +2,7 @@ from .catalogue import Catalogue
 from .episode import Episode, Languages, Players
 from .langs import Lang, LangId, flags, id2lang, lang2ids
 from .season import Season
-from .top_level import AnimeSama, find_site_url
+from .top_level import AnimeSama, find_site_url, PlanningDay, PlanningEntry
 
 try:
     from .cli.__main__ import main
@@ -26,6 +26,8 @@ except ImportError:
 __all__ = [
     "AnimeSama",
     "Catalogue",
+    "PlanningDay",
+    "PlanningEntry",
     "Season",
     "Players",
     "Languages",

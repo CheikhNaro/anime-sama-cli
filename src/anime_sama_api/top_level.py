@@ -44,6 +44,30 @@ async def find_site_url(
 
 
 @dataclass(frozen=True)
+class PlanningEntry:
+    """Une entrée du planning (anime ou scan) avec titre, type, heure et langue."""
+
+    title: str
+    kind: str  # "Anime" | "Scans"
+    time: str  # ex. "15h00" ou ""
+    lang: str  # "VOSTFR" | "VF" | "VJ"
+    url: str
+
+    def display_line(self) -> str:
+        time_part = f" {self.time}" if self.time else ""
+        return f"{self.title} — {self.kind} {self.lang}{time_part}"
+
+
+@dataclass(frozen=True)
+class PlanningDay:
+    """Un jour du planning avec sa date et la liste des sorties."""
+
+    day_name: str  # Lundi, Mardi, ...
+    date: str  # ex. "02/03"
+    entries: tuple[PlanningEntry, ...]
+
+
+@dataclass(frozen=True)
 class EpisodeRelease:
     page_url: str
     image_url: str
@@ -232,9 +256,79 @@ class AnimeSama:
     async def all_catalogues(self) -> list[Catalogue]:
         return await self.search("")
 
-    async def planning(self) -> list[list[Season]]:
-        # Get from homepage, return value should be change
-        raise NotImplementedError
+    def _parse_planning(self, html: str) -> list[PlanningDay]:
+        """Parse la page planning et retourne la liste des jours avec leurs entrées."""
+        text = re.sub(r"<script[\W\w]+?</script>", "", html)
+        base_url = self.site_url.rstrip("/")
+        days_order = (
+            "Lundi",
+            "Mardi",
+            "Mercredi",
+            "Jeudi",
+            "Vendredi",
+            "Samedi",
+            "Dimanche",
+        )
+        result: list[PlanningDay] = []
+
+        # Trouver les sections par jour : <h2 ...>Lundi</h2> etc.
+        day_pattern = re.compile(
+            r'<h2[^>]*titreJours[^>]*>\s*('
+            + "|".join(re.escape(d) for d in days_order)
+            + r')\s*</h2>',
+            re.IGNORECASE,
+        )
+        day_matches = list(day_pattern.finditer(text))
+
+        for i, day_match in enumerate(day_matches):
+            day_name = day_match.group(1).strip()
+            start = day_match.end()
+            end = day_matches[i + 1].start() if i + 1 < len(day_matches) else len(text)
+            section = text[start:end]
+
+            # Date du jour (DD/MM)
+            date_match = re.search(r"(\d{1,2}/\d{1,2})", section)
+            date_str = date_match.group(1) if date_match else ""
+
+            # Cartes : div avec planning-card, type Anime/Scans, lang, data-title, href, card-title, optionnel info-text (heure)
+            card_pattern = re.compile(
+                r'<div[^>]*\b(Anime|Scans)\s+(VOSTFR|VF|VJ)[^>]*\bplanning-card\b'
+                r'[^>]*data-title="([^"]*)"[^>]*>'
+                r'[\s\S]*?href="(/catalogue/[^"]+)"'
+                r'[\s\S]*?card-title[^>]*>([^<]+)'
+                r'(?:[\s\S]*?info-text[^>]*>([^<]+))?',
+                re.IGNORECASE,
+            )
+            entries_list: list[PlanningEntry] = []
+            for card in card_pattern.finditer(section):
+                kind, lang, _data_title, path, title, time_str = card.groups()
+                title = unescape(title).strip() if title else ""
+                time_str = (time_str or "").strip()
+                full_url = path if path.startswith("http") else base_url + path
+                entries_list.append(
+                    PlanningEntry(
+                        title=title,
+                        kind=kind or "Anime",
+                        time=time_str,
+                        lang=lang or "VOSTFR",
+                        url=full_url,
+                    )
+                )
+            result.append(
+                PlanningDay(
+                    day_name=day_name,
+                    date=date_str,
+                    entries=tuple(entries_list),
+                )
+            )
+        return result
+
+    async def planning(self) -> list[PlanningDay]:
+        """Récupère le planning des sorties depuis la page planning du site."""
+        response = await self.client.get(f"{self.site_url}planning/")
+        if response.is_error:
+            return []
+        return self._parse_planning(response.text)
 
     async def new_episodes(self) -> list[EpisodeRelease]:
         """

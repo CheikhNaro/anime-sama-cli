@@ -1,0 +1,1340 @@
+# -*- coding: utf-8 -*-
+"""
+anime-sama CLI - Regarder ou télécharger des animés depuis anime-sama.to
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any, Literal
+
+# ===== COULEURS ANSI =====
+RED = "\033[91m"
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+BLUE = "\033[94m"
+MAGENTA = "\033[95m"
+CYAN = "\033[96m"
+WHITE = "\033[97m"
+RESET = "\033[0m"
+BOLD = "\033[1m"
+
+# Configuration
+SITE_URL = "https://anime-sama.to/"
+CONFIG_DIR = Path(
+    os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+) / "anime-sama-cli"
+CONFIG_FILE = CONFIG_DIR / "config.json"
+HISTORY_FILE = CONFIG_DIR / "history.json"
+ANIME_SAMA_API_CONFIG_DIR = Path(
+    os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+) / "anime-sama_api"
+ANIME_SAMA_API_CONFIG_FILE = ANIME_SAMA_API_CONFIG_DIR / "config.toml"
+DOWNLOADS_DIR_NAME = "Téléchargements"
+__version__ = "2.0.0"
+
+# FZF minimum version for dynamic search
+FZF_MIN_VERSION = (0, 53, 0)
+
+# Cache des covers (hauteur max 120px, ratio conservé)
+COVER_CACHE_DIR = Path(
+    os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache"))
+) / "anime-sama-cli" / "covers"
+COVER_MAX_HEIGHT = 120
+
+
+def clear_screen() -> None:
+    """Efface le terminal avant d'afficher un menu."""
+    sys.stdout.write("\033[2J\033[H")
+    sys.stdout.flush()
+
+
+def _switch_to_alternate_buffer() -> None:
+    """Passe en buffer alterné : rien d'autre (fastfetch, etc.) n'est visible derrière."""
+    sys.stdout.write("\033[?1049h")
+    sys.stdout.flush()
+
+
+def _switch_from_alternate_buffer() -> None:
+    """Revient au buffer normal en quittant."""
+    sys.stdout.write("\033[?1049l")
+    sys.stdout.flush()
+
+
+def get_downloads_path() -> Path:
+    """Dossier Téléchargements de l'utilisateur (respecte la locale)."""
+    home = Path.home()
+    for name in (DOWNLOADS_DIR_NAME, "Downloads", "Téléchargements"):
+        p = home / name
+        if p.is_dir():
+            return p
+    try:
+        from platformdirs import user_downloads_dir
+        return Path(user_downloads_dir())
+    except ImportError:
+        return home / "Downloads"
+
+
+# ===== CONFIG =====
+
+def load_config() -> dict[str, str] | None:
+    """Charge la config utilisateur (lecteur, langue)."""
+    if not CONFIG_FILE.exists():
+        return None
+    try:
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def save_config(player: str, language: str) -> None:
+    """Sauvegarde la config et synchronise avec anime-sama_api."""
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    cfg = {"player": player, "language": language}
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2, ensure_ascii=False)
+
+    # Synchroniser avec anime-sama_api pour internal_player et prefer_languages
+    ANIME_SAMA_API_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    lang_list = [language]
+    player_cmd = "mpv" if player.upper() == "MPV" else "vlc"
+    toml_content = f'''# Généré par anime-sama-cli - ne pas modifier à la main
+prefer_languages = {json.dumps(lang_list)}
+download_path = "{get_downloads_path()}"
+episode_path = "{{serie}}/{{season}}/{{episode}}"
+download = true
+show_players = false
+max_retry_time = 1024
+format = "best"
+format_sort = ""
+internal_player_command = "{player_cmd}"
+url = "{SITE_URL}"
+provider_url = "https://anime-sama.pw/"
+
+[concurrent_downloads]
+fragment = 3
+video = 5
+
+[players_hostname]
+prefers = []
+bans = []
+'''
+    with open(ANIME_SAMA_API_CONFIG_FILE, "w", encoding="utf-8") as f:
+        f.write(toml_content)
+
+
+# ===== HISTORIQUE =====
+
+def _load_history() -> list[dict[str, Any]]:
+    """Charge l'historique des animés regardés (anime, season, episode)."""
+    if not HISTORY_FILE.exists():
+        return []
+    try:
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def _save_history(entries: list[dict[str, Any]]) -> None:
+    """Sauvegarde l'historique."""
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(entries, f, indent=2, ensure_ascii=False)
+
+
+def _add_to_history(anime_name: str, season: int, episode: int) -> None:
+    """Ajoute ou met à jour l'entrée pour cet animé (dernier épisode regardé)."""
+    name = (anime_name or "").strip()
+    if not name:
+        return
+    entries = _load_history()
+    entries = [e for e in entries if (e.get("anime") or "").strip() != name]
+    entries.insert(0, {"anime": name, "season": season, "episode": episode})
+    _save_history(entries)
+
+
+def first_run_wizard() -> None:
+    """Premier lancement : demande lecteur et langue."""
+    clear_screen()
+    print(BOLD + CYAN + "  🎬 ANIME-SAMA CLI" + RESET + " v" + __version__)
+    print(GREEN + "  ─────────────────────────" + RESET)
+    print(YELLOW + "  Premier lancement : définissez vos préférences." + RESET)
+    print()
+
+    # Lecteur
+    items_player = ["MPV", "VLC"]
+    choice_player = _fzf_select(items_player, "Lecteur préféré : ")
+    if not choice_player:
+        _die("Aucune sélection.")
+    player = choice_player.strip()
+
+    # Langue
+    items_lang = ["VF", "VOSTFR"]
+    choice_lang = _fzf_select(items_lang, "Langue préférée : ")
+    if not choice_lang:
+        _die("Aucune sélection.")
+    language = choice_lang.strip()
+
+    save_config(player, language)
+    print(GREEN + "  ✓ Préférences enregistrées." + RESET)
+
+
+def _die(msg: str, code: int = 1) -> None:
+    print(RED + "✗ " + msg + RESET, file=sys.stderr)
+    sys.exit(code)
+
+
+# ===== DÉPENDANCES =====
+
+def _check_fzf_version() -> bool:
+    try:
+        out = subprocess.run(
+            ["fzf", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if out.returncode != 0:
+            return False
+        m = re.search(r"(\d+)\.(\d+)\.(\d+)", out.stdout or out.stderr or "")
+        if m:
+            v = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            return v >= FZF_MIN_VERSION
+        return True
+    except (FileNotFoundError, subprocess.TimeoutExpired, ValueError):
+        return False
+
+
+def check_deps(player: str) -> None:
+    """Vérifie fzf et le lecteur (mpv ou vlc)."""
+    if not _check_fzf_version():
+        _die(
+            "fzf >= 0.53.0 est requis (recherche dynamique). "
+            "Installez-le : sudo apt install fzf  ou  https://github.com/junegunn/fzf"
+        )
+    cmd = "mpv" if player.upper() == "MPV" else "vlc"
+    try:
+        subprocess.run(
+            [cmd, "--version"],
+            capture_output=True,
+            timeout=5,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        _die(f"Le lecteur '{cmd}' est requis. Installez-le (ex: sudo apt install {cmd.lower()}).")
+
+
+# ===== FZF =====
+
+def _terminal_supports_images() -> bool:
+    """Détecte si le terminal affiche les images (Kitty, WezTerm, iTerm2, etc.)."""
+    term = os.environ.get("TERM", "")
+    program = os.environ.get("TERM_PROGRAM", "")
+    if "kitty" in term or os.environ.get("KITTY_WINDOW_ID"):
+        return True
+    if "WezTerm" in program or "wezterm" in term:
+        return True
+    if "iTerm" in program or "iTerm.app" in program:
+        return True
+    return False
+
+
+def _full_cover_url(catalogue: Any) -> str:
+    """URL complète de la cover (image_url peut être relative)."""
+    url = getattr(catalogue, "image_url", "") or ""
+    if url.startswith("http"):
+        return url
+    base = getattr(catalogue, "site_url", None) or SITE_URL
+    return (base.rstrip("/") + "/" + url.lstrip("/"))
+
+
+def _run_preview_cover(mapping_path: str, line: str) -> None:
+    """Mode --preview-cover : télécharge/redimensionne la cover et l'affiche (Kitty/WezTerm)."""
+    import base64
+    import hashlib
+    import tempfile
+    line = (line or "").strip()
+    if not line or not os.path.isfile(mapping_path):
+        return
+    try:
+        with open(mapping_path, "r", encoding="utf-8") as f:
+            mapping = json.load(f)
+        entry = next((e for e in mapping if (e.get("name") or "").strip() == line), None)
+        if not entry:
+            return
+        image_url = entry.get("url", "").strip()
+        if not image_url:
+            return
+    except (json.JSONDecodeError, OSError):
+        return
+
+    COVER_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    key = hashlib.sha256(image_url.encode()).hexdigest()[:16]
+    cached = COVER_CACHE_DIR / f"{key}_h{COVER_MAX_HEIGHT}.png"
+    if not cached.is_file():
+        try:
+            import urllib.request
+            req = urllib.request.Request(image_url, headers={"User-Agent": "Mozilla/5.0 (compatible; anime-sama-cli)"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                raw = resp.read()
+        except Exception:
+            return
+        tmp_in = tempfile.NamedTemporaryFile(suffix=".img", delete=False)
+        try:
+            tmp_in.write(raw)
+            tmp_in.close()
+            # Redimensionner : hauteur max 180px, ratio conservé (ImageMagick 6 = convert, 7 = magick)
+            for convert_cmd in ("convert", "magick"):
+                result = subprocess.run(
+                    [convert_cmd, tmp_in.name, "-resize", f"x{COVER_MAX_HEIGHT}>", "-quality", "90", "png:-"],
+                    capture_output=True,
+                    timeout=5,
+                )
+                if result.returncode == 0 and result.stdout:
+                    cached.write_bytes(result.stdout)
+                    break
+            else:
+                return
+        finally:
+            try:
+                os.unlink(tmp_in.name)
+            except OSError:
+                pass
+
+    try:
+        data = cached.read_bytes()
+    except OSError:
+        return
+    b64 = base64.standard_b64encode(data).decode("ascii")
+    w = 213  # 1920/1080 * 120 ≈ 213
+    h = COVER_MAX_HEIGHT
+    # Protocol Kitty / WezTerm : image inline
+    sys.stdout.write(f"\033]1337;File=size={len(data)};width={w}px;height={h}px;inline=1:{b64}\033\\")
+    sys.stdout.flush()
+
+
+def _fzf_select(
+    items: list[str],
+    prompt: str = "Choisir : ",
+    multi: bool = False,
+    catalogues_for_preview: list[Any] | None = None,
+) -> str | list[str] | None:
+    """Sélection via fzf. Si catalogues_for_preview et terminal supporte les images, affiche la cover à droite."""
+    if not items:
+        return None
+    if len(items) == 1 and not multi:
+        return items[0]
+    fzf_input = "\n".join(items)
+    cmd = [
+        "fzf",
+        "--reverse",
+        "--cycle",
+        f"--prompt={prompt}",
+        "--height=100%",
+    ]
+    if multi:
+        cmd.append("-m")
+        cmd.append("--bind=space:toggle")
+
+    if catalogues_for_preview and _terminal_supports_images():
+        try:
+            import tempfile
+            mapping = [
+                {"name": (c.name or "").strip(), "url": _full_cover_url(c)}
+                for c in catalogues_for_preview
+                if getattr(c, "image_url", None)
+            ]
+            if mapping:
+                with tempfile.NamedTemporaryFile(
+                    mode="w", suffix=".json", delete=False, encoding="utf-8"
+                ) as tf:
+                    json.dump(mapping, tf, ensure_ascii=False)
+                    map_path = tf.name
+                script_path = os.path.abspath(__file__)
+                cmd.extend([
+                    "--preview",
+                    f'python3 {repr(script_path)} --preview-cover {repr(map_path)} {{}}',
+                    "--preview-window=right:30%:wrap",
+                ])
+        except Exception:
+            map_path = None
+    else:
+        map_path = None
+
+    try:
+        result = subprocess.run(
+            cmd,
+            input=fzf_input,
+            text=True,
+            capture_output=True,
+            timeout=300,
+        )
+        if map_path and os.path.isfile(map_path):
+            try:
+                os.unlink(map_path)
+            except OSError:
+                pass
+        if result.returncode != 0:
+            return None
+        out = (result.stdout or "").strip()
+        if multi:
+            return [s for s in out.split("\n") if s] if out else []
+        return out
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        if map_path and os.path.isfile(map_path):
+            try:
+                os.unlink(map_path)
+            except OSError:
+                pass
+        return None
+
+
+# ===== API =====
+
+def _get_client():
+    from httpx import AsyncClient
+    return AsyncClient()
+
+
+async def _get_catalogues(query: str = ""):
+    from anime_sama_api import AnimeSama
+    client = _get_client()
+    api = AnimeSama(SITE_URL, client=client)
+    if query.strip():
+        return await api.search(query.strip())
+    return await api.all_catalogues()
+
+
+async def _search_catalogues(query: str):
+    from anime_sama_api import AnimeSama
+    client = _get_client()
+    api = AnimeSama(SITE_URL, client=client)
+    return await api.search(query.strip())
+
+
+# ===== MENUS =====
+
+def _menu_main() -> Literal["regarder", "télécharger", "planning", "historique", "quitter"] | None:
+    """Menu principal. Flèches ↑↓ pour naviguer, Entrée pour valider. Raccourcis : (R), (T), (P), (H), (q)."""
+    options = [
+        ("Regarder un animé", "regarder"),
+        ("Télécharger un animé", "télécharger"),
+        ("Planning des sorties", "planning"),
+        ("Voir l'historique", "historique"),
+        ("Quitter", "quitter"),
+    ]
+    index = 0
+    shortcut_map = {"regarder": "R", "télécharger": "T", "planning": "P", "historique": "H", "quitter": "q"}
+    while True:
+        clear_screen()
+        print(BOLD + CYAN + "  🎬 ANIME-SAMA" + RESET)
+        print(GREEN + "  ─────────────────────────" + RESET)
+        print()
+        for i, (label, _) in enumerate(options):
+            prefix = "  " + GREEN + "▶ " + RESET if i == index else "    "
+            shortcut = shortcut_map[options[i][1]]
+            print(prefix + GREEN + f"({shortcut})" + RESET + f" {label}")
+        print()
+        ch = _read_key()
+        if ch == "up":
+            index = (index - 1) % len(options)
+        elif ch == "down":
+            index = (index + 1) % len(options)
+        elif ch == "enter":
+            return options[index][1]
+        elif ch == "r":
+            return "regarder"
+        elif ch == "t":
+            return "télécharger"
+        elif ch == "p":
+            return "planning"
+        elif ch == "h":
+            return "historique"
+        elif ch == "q":
+            return "quitter"
+
+
+def _menu_search() -> Literal["recherche", "catalogue", "menu", "quitter"] | None:
+    """Menu de recherche. Flèches ↑↓ pour naviguer, Entrée pour valider. Raccourcis : (S), (C), (m), (q)."""
+    options = [
+        ("Rechercher directement le nom de l'animé", "recherche"),
+        ("Recherche dynamique dans le catalogue", "catalogue"),
+        ("Revenir au menu principal", "menu"),
+        ("Quitter", "quitter"),
+    ]
+    index = 0
+    while True:
+        clear_screen()
+        print(BOLD + CYAN + "  🔍 Recherche" + RESET)
+        print(GREEN + "  ─────────────────────────" + RESET)
+        print()
+        for i, (label, _) in enumerate(options):
+            prefix = "  " + GREEN + "▶ " + RESET if i == index else "    "
+            shortcut = {"recherche": "S", "catalogue": "C", "menu": "m", "quitter": "q"}[options[i][1]]
+            print(prefix + GREEN + f"({shortcut})" + RESET + f" {label}")
+        print()
+        ch = _read_key()
+        if ch == "up":
+            index = (index - 1) % len(options)
+        elif ch == "down":
+            index = (index + 1) % len(options)
+        elif ch == "enter":
+            return options[index][1]
+        elif ch == "s":
+            return "recherche"
+        elif ch == "c":
+            return "catalogue"
+        elif ch == "m":
+            return "menu"
+        elif ch == "q":
+            return "quitter"
+
+
+def _read_single_key() -> str:
+    """Lit une seule touche (sans Entrée). Retourne le caractère en minuscule ou 'up'/'down'/'enter'."""
+    return _read_key()
+
+
+def _read_key() -> str:
+    """Lit une touche : caractère en minuscule, ou 'up', 'down', 'enter' pour flèches et Entrée."""
+    try:
+        import termios
+        import tty
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd)
+            ch = sys.stdin.read(1)
+            if ch == "\x1b":  # ESC → séquence flèches (ESC [ A/B/C/D ou ESC O A/B/C/D)
+                n = sys.stdin.read(1)
+                if n == "[" or n == "O":
+                    code = sys.stdin.read(1)
+                    if code == "A":
+                        return "up"
+                    if code == "B":
+                        return "down"
+                    if code == "C":
+                        return "right"
+                    if code == "D":
+                        return "left"
+            if ch in ("\r", "\n"):
+                return "enter"
+            return ch.lower() if ch else ""
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+    except (ImportError, OSError):
+        try:
+            line = input("Votre choix : ").strip().lower()
+            return line[0] if line else ""
+        except (EOFError, IndexError):
+            return ""
+
+
+def _menu_after_play(
+    episode_number: int,
+    has_next: bool,
+    has_prev: bool,
+    is_last_ep_of_season: bool,
+    has_next_season: bool,
+    anime_name: str = "",
+) -> Literal["suivant", "replay", "précédent", "saison_suivante", "menu", "quitter"] | None:
+    """Après fermeture du lecteur. Flèches ↑↓ pour naviguer, Entrée pour valider. Touches n/r/p/m/q."""
+    options: list[tuple[str, str]] = []
+    if has_next:
+        options.append(("Épisode suivant", "suivant"))
+    options.append(("Rejouer l'épisode actuel", "replay"))
+    if has_prev:
+        options.append(("Épisode précédent", "précédent"))
+    elif is_last_ep_of_season and has_next_season:
+        options.append(("Saison suivante", "saison_suivante"))
+    options.append(("Revenir au menu principal", "menu"))
+    options.append(("Quitter", "quitter"))
+    index = 0
+    shortcuts = {"suivant": "n", "replay": "r", "précédent": "p", "saison_suivante": "s", "menu": "m", "quitter": "q"}
+    while True:
+        clear_screen()
+        if anime_name.strip():
+            msg = f"Vous venez de regarder l'épisode {episode_number} de {anime_name.strip()}."
+        else:
+            msg = f"Vous venez de regarder l'épisode {episode_number}."
+        print(CYAN + msg + RESET)
+        print(CYAN + "Que faire maintenant ?" + RESET)
+        print()
+        for i, (label, action) in enumerate(options):
+            prefix = "  " + GREEN + "▶ " + RESET if i == index else "    "
+            short = shortcuts.get(action, "")
+            print(prefix + GREEN + f"({short})" + RESET + f" {label}")
+        print()
+        ch = _read_key()
+        if ch == "up":
+            index = (index - 1) % len(options)
+        elif ch == "down":
+            index = (index + 1) % len(options)
+        elif ch == "enter":
+            return options[index][1]
+        elif ch == "n" and has_next:
+            return "suivant"
+        elif ch == "r":
+            return "replay"
+        elif ch == "p" and has_prev:
+            return "précédent"
+        elif ch == "s" and is_last_ep_of_season and has_next_season:
+            return "saison_suivante"
+        elif ch == "m":
+            return "menu"
+        elif ch == "q":
+            return "quitter"
+
+
+def _show_history() -> None:
+    """Affiche la liste des animés déjà regardés (anime - Sx, Epy), puis attend une touche pour revenir."""
+    clear_screen()
+    print(BOLD + CYAN + "  📜 Historique des animés regardés" + RESET)
+    print(GREEN + "  ─────────────────────────" + RESET)
+    print()
+    entries = _load_history()
+    if not entries:
+        print(YELLOW + "  Aucun animé regardé pour le moment." + RESET)
+    else:
+        for e in entries:
+            anime = (e.get("anime") or "").strip()
+            s = e.get("season", 1)
+            ep = e.get("episode", 0)
+            print("  " + GREEN + "•" + RESET + f" {anime} - S{s}, Ep{ep}")
+    print()
+    print("  Appuyez sur une touche pour revenir au menu...")
+    _read_key()
+
+
+async def _show_planning() -> None:
+    """Affiche le planning des sorties (par jour) puis attend une touche pour revenir."""
+    clear_screen()
+    print(BOLD + CYAN + "  📅 Planning des sorties" + RESET)
+    print(GREEN + "  ─────────────────────────" + RESET)
+    print()
+    print(BLUE + "  Chargement du planning..." + RESET)
+    try:
+        from anime_sama_api import AnimeSama
+        client = _get_client()
+        api = AnimeSama(SITE_URL, client=client)
+        days = await api.planning()
+    except Exception as e:
+        print(RED + f"  Erreur : {e}" + RESET)
+        print()
+        print("  Appuyez sur une touche pour revenir au menu...")
+        _read_key()
+        return
+    clear_screen()
+    print(BOLD + CYAN + "  📅 Planning des sorties" + RESET)
+    print(GREEN + "  ─────────────────────────" + RESET)
+    print()
+    if not days:
+        print(YELLOW + "  Aucune donnée de planning disponible." + RESET)
+    else:
+        for day in days:
+            date_str = f" ({day.date})" if day.date else ""
+            print(BOLD + f"  {day.day_name}{date_str}" + RESET)
+            for entry in day.entries:
+                time_part = f" {entry.time}" if entry.time else ""
+                print("    " + GREEN + "•" + RESET + f" {entry.title} — {entry.kind} {entry.lang}{time_part}")
+            print()
+    print("  Appuyez sur une touche pour revenir au menu...")
+    _read_key()
+
+
+# L'API ne prend pas en charge le téléchargement des scans ; on affiche uniquement une alerte.
+
+
+def _alert_scan_read_online_and_return() -> Literal["menu", "quit"]:
+    """Alerte : c'est un scan, pas d'épisodes. Dire d'aller lire en ligne sur anime-sama.to."""
+    clear_screen()
+    print(YELLOW + "Aucun épisode disponible — c'est un scan." + RESET)
+    print()
+    print("Consultez le site anime-sama.to pour lire les scans en ligne.")
+    print()
+    items = ["Revenir au menu principal", "Quitter"]
+    choice = _fzf_select(items, "Que faire ? ")
+    if not choice or "Quitter" in choice:
+        return "quit"
+    return "menu"
+
+
+# ===== LECTURE =====
+
+def _resolve_stream_url(embed_url: str) -> str | None:
+    """Résout l'URL d'une page embed (vidmoly, sibnet, etc.) en URL de flux directe via yt-dlp."""
+    try:
+        out = subprocess.run(
+            ["yt-dlp", "-g", "--no-warnings", "--no-check-certificate", embed_url],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if out.returncode == 0 and out.stdout and out.stdout.strip():
+            return out.stdout.strip()
+    except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
+        pass
+    return None
+
+
+def _play_episode_url(url: str, player: str) -> subprocess.Popen | None:
+    """Lance le lecteur sur l'URL (résout l'embed avec yt-dlp si nécessaire). Referer selon source (Sibnet/Vidmoly)."""
+    play_url = _resolve_stream_url(url)
+    if not play_url:
+        play_url = url
+    ua = "Mozilla/5.0 (X11; Linux x86_64; rv:134.0) Gecko/20100101 Firefox/134.0"
+    if "sibnet" in play_url or "sibnet" in url:
+        referer = "https://video.sibnet.ru/"
+    elif "vidmoly" in play_url or "vidmoly" in url:
+        referer = "https://vidmoly.net/"
+    else:
+        referer = "https://anime-sama.to/"
+    if player.upper() == "MPV":
+        cmd = ["mpv", play_url, "--fullscreen", f"--referrer={referer}", f"--user-agent={ua}"]
+        if play_url == url and ("vidmoly" in url or "sibnet" in url or "embed" in url.lower()):
+            cmd.insert(-1, "--ytdl-format=best")
+    else:
+        cmd = [
+            "vlc", play_url, "--fullscreen",
+            f"--http-referrer={referer}",
+            f"--http-user-agent={ua}",
+        ]
+    try:
+        return subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        return None
+
+
+def _play_episode_api(episode, prefer_languages: list[str], player: str):
+    """Joue un épisode via l'API (Episode) ou via URL."""
+    try:
+        from anime_sama_api.episode import Episode
+        if not isinstance(episode, Episode):
+            return None
+        lang_list = [l for l in prefer_languages if l in ("VF", "VOSTFR")]
+        if not lang_list:
+            lang_list = ["VOSTFR"]
+        best = episode.best(lang_list)
+        if not best:
+            return None
+        return _play_episode_url(best, player)
+    except Exception:
+        return None
+
+
+# ===== TÉLÉCHARGEMENT =====
+
+def _download_episodes(
+    episodes: list,
+    catalogue,
+    base_path: Path,
+    episode_path_tpl: str,
+    prefer_languages: list[str],
+    zip_if_multiple: bool,
+) -> None:
+    """Télécharge les épisodes (API multi_download) et zippe si demandé."""
+    try:
+        from anime_sama_api.cli.downloader import multi_download
+        from anime_sama_api.cli.episode_extra_info import convert_with_extra_info
+        from anime_sama_api.cli.config import PlayersConfig
+        lang_list = [l for l in prefer_languages if l in ("VF", "VOSTFR")]
+        if not lang_list:
+            lang_list = ["VOSTFR"]
+        extra = [convert_with_extra_info(ep, catalogue) for ep in episodes]
+        multi_download(
+            extra,
+            base_path,
+            episode_path_tpl,
+            {"video": 1, "fragment": 3},
+            lang_list,
+            PlayersConfig([], []),
+            video_format="best",
+        )
+        if zip_if_multiple and len(episodes) > 1:
+            import zipfile
+            zip_name = base_path / f"{_sanitize_filename(catalogue.name)}_episodes.zip"
+            with zipfile.ZipFile(zip_name, "w", zipfile.ZIP_DEFLATED) as zf:
+                for f in base_path.rglob("*"):
+                    if f.is_file() and f.suffix in (".mp4", ".mkv", ".webm"):
+                        zf.write(f, f.relative_to(base_path))
+            print(GREEN + f"Archive créée : {zip_name}" + RESET)
+    except Exception as e:
+        print(RED + f"Erreur téléchargement : {e}" + RESET)
+
+
+def _download_scan_chapters(catalogue, chapters_selected: list, base_path: Path) -> None:
+    """Téléchargement scan : l'API ne fournit pas le téléchargement des chapitres (PDF)."""
+    print(YELLOW + "Le téléchargement des scans n'est pas pris en charge par l'API." + RESET)
+    print("Consultez le site anime-sama.to pour lire les scans en ligne.")
+
+
+# ===== NOMENCLATURE =====
+
+def _sanitize_filename(s: str) -> str:
+    return re.sub(r'[<>:"/\\|?*]', "_", s).strip() or "anime"
+
+
+def _download_folder_anime(catalogue, season_name: str) -> Path:
+    """Dossier de téléchargement : Titre de l'animé suivi de la saison."""
+    base = get_downloads_path()
+    name = _sanitize_filename(f"{catalogue.name} {season_name}")
+    return base / name
+
+
+def _download_folder_scan(catalogue, chapter_name: str) -> Path:
+    """Dossier scan : Titre du scan suivi du numéro du chapitre."""
+    base = get_downloads_path()
+    name = _sanitize_filename(f"{catalogue.name} {chapter_name}")
+    return base / name
+
+
+# ===== FLUX REGARDER =====
+
+async def _run_watch_flow(config: dict[str, str]) -> bool:
+    """Retourne True pour rester dans l'app, False pour quitter."""
+    player = config.get("player", "mpv").strip()
+    language = config.get("language", "VOSTFR").strip()
+    prefer_languages = [language]
+
+    while True:
+        search_action = _menu_search()
+        if search_action == "quitter":
+            return False
+        if search_action == "menu":
+            return True
+
+        catalogue = None
+        if search_action == "recherche":
+            clear_screen()
+            try:
+                q = input(CYAN + "Titre de l'animé : " + RESET).strip()
+            except (EOFError, KeyboardInterrupt):
+                return False
+            if not q:
+                continue
+            print(BLUE + "Recherche..." + RESET)
+            catalogues = await _search_catalogues(q)
+            if not catalogues:
+                print(YELLOW + "Aucun résultat." + RESET)
+                input("Appuyez sur Entrée...")
+                continue
+            # Ne pas tronquer les titres ; preview cover si le terminal le supporte
+            items = [c.name for c in catalogues]
+            choice = _fzf_select(items, "Choisir un animé : ", catalogues_for_preview=catalogues)
+            if not choice:
+                continue
+            for c in catalogues:
+                if (c.name or "").strip() == (choice or "").strip():
+                    catalogue = c
+                    break
+            if not catalogue:
+                continue
+
+        elif search_action == "catalogue":
+            clear_screen()
+            print(BLUE + "Chargement du catalogue complet..." + RESET)
+            catalogues = await _get_catalogues("")
+            if not catalogues:
+                print(YELLOW + "Aucun résultat." + RESET)
+                input("Appuyez sur Entrée...")
+                continue
+            items = [c.name for c in catalogues]
+            choice = _fzf_select(items, "Recherche dynamique (tapez pour filtrer) : ", catalogues_for_preview=catalogues)
+            if not choice:
+                continue
+            for c in catalogues:
+                if (c.name or "").strip() == (choice or "").strip():
+                    catalogue = c
+                    break
+            if not catalogue:
+                continue
+
+        if not catalogue:
+            continue
+
+        # 1ER CAS Regarder : saison puis épisode. Si aucun épisode disponible = scan.
+        try:
+            seasons = await catalogue.seasons()
+        except Exception as e:
+            print(RED + f"Erreur : {e}" + RESET)
+            try:
+                input("Appuyez sur Entrée... ")
+            except (EOFError, KeyboardInterrupt):
+                pass
+            continue
+
+        if not seasons:
+            # Aucun épisode disponible = c'est un scan → alerte lire en ligne
+            action = _alert_scan_read_online_and_return()
+            if action == "quit":
+                return False
+            continue
+
+        season_items = [s.name for s in seasons]
+        choice_s = _fzf_select(season_items, "Choisir la saison : ")
+        if not choice_s:
+            continue
+        selected_season = None
+        for s in seasons:
+            if (s.name or "").strip() == (choice_s or "").strip():
+                selected_season = s
+                break
+        if not selected_season:
+            continue
+
+        try:
+            episodes = await selected_season.episodes()
+        except Exception as e:
+            print(RED + f"Erreur : {e}" + RESET)
+            try:
+                input("Appuyez sur Entrée... ")
+            except (EOFError, KeyboardInterrupt):
+                pass
+            continue
+
+        if not episodes:
+            # Aucun épisode dans cette saison = scan
+            action = _alert_scan_read_online_and_return()
+            if action == "quit":
+                return False
+            continue
+
+        episode_items = [e.name for e in episodes]
+        choice_ep = _fzf_select(episode_items, "Choisir l'épisode : ")
+        if not choice_ep:
+            continue
+        selected_episode = None
+        idx_ep = -1
+        for i, e in enumerate(episodes):
+            if (e.name or "").strip() == (choice_ep or "").strip():
+                selected_episode = e
+                idx_ep = i
+                break
+        if not selected_episode:
+            continue
+
+        season_index = next((i for i, s in enumerate(seasons) if s.name == selected_season.name), 0)
+        # Lecture
+        ep_num = idx_ep + 1
+        anime_name = (catalogue.name or "").strip()
+        _add_to_history(anime_name, season_index + 1, ep_num)
+        print()
+        print(BOLD + CYAN + f"Épisode N°{ep_num} en cours de visionnage ..." + RESET)
+        print()
+        proc = _play_episode_api(selected_episode, prefer_languages, player)
+        if not proc:
+            print(RED + "Impossible de lancer la lecture." + RESET)
+            input("Appuyez sur Entrée...")
+            continue
+        proc.wait()
+
+        # Menu après lecture
+        has_next = idx_ep < len(episodes) - 1
+        has_prev = idx_ep > 0
+        is_last_ep = idx_ep == len(episodes) - 1
+        season_index = next((i for i, s in enumerate(seasons) if s.name == selected_season.name), 0)
+        has_next_season = season_index < len(seasons) - 1
+
+        anime_name = (catalogue.name or "").strip()
+        while True:
+            after = _menu_after_play(ep_num, has_next, has_prev, is_last_ep, has_next_season, anime_name)
+            if after == "quitter":
+                return False
+            if after == "menu":
+                return True
+            if after == "replay":
+                print()
+                print(BOLD + CYAN + f"Épisode N°{ep_num} en cours de visionnage ..." + RESET)
+                print()
+                proc = _play_episode_api(selected_episode, prefer_languages, player)
+                if proc:
+                    proc.wait()
+                else:
+                    print(RED + "Impossible de relancer l'épisode." + RESET)
+                continue
+            if after == "suivant":
+                idx_ep += 1
+                selected_episode = episodes[idx_ep]
+                ep_num = idx_ep + 1
+                has_prev = True
+                has_next = idx_ep < len(episodes) - 1
+                is_last_ep = idx_ep == len(episodes) - 1
+                _add_to_history(anime_name, season_index + 1, ep_num)
+                print()
+                print(BOLD + CYAN + f"Épisode N°{ep_num} en cours de visionnage ..." + RESET)
+                print()
+                proc = _play_episode_api(selected_episode, prefer_languages, player)
+                if proc:
+                    proc.wait()
+                else:
+                    print(RED + "Impossible de lancer l'épisode suivant." + RESET)
+                    break
+            elif after == "précédent":
+                idx_ep -= 1
+                selected_episode = episodes[idx_ep]
+                ep_num = idx_ep + 1
+                has_next = True
+                has_prev = idx_ep > 0
+                is_last_ep = False
+                _add_to_history(anime_name, season_index + 1, ep_num)
+                print()
+                print(BOLD + CYAN + f"Épisode N°{ep_num} en cours de visionnage ..." + RESET)
+                print()
+                proc = _play_episode_api(selected_episode, prefer_languages, player)
+                if proc:
+                    proc.wait()
+                else:
+                    print(RED + "Impossible de lancer l'épisode précédent." + RESET)
+                    break
+            elif after == "saison_suivante":
+                if not has_next_season:
+                    break
+                selected_season = seasons[season_index + 1]
+                season_index += 1
+                try:
+                    episodes = await selected_season.episodes()
+                except Exception:
+                    break
+                if not episodes:
+                    break
+                idx_ep = 0
+                selected_episode = episodes[0]
+                ep_num = 1
+                has_prev = False
+                has_next = len(episodes) > 1
+                is_last_ep = len(episodes) == 1
+                has_next_season = season_index < len(seasons) - 1
+                _add_to_history(anime_name, season_index + 1, ep_num)
+                print()
+                print(BOLD + CYAN + f"Épisode N°{ep_num} en cours de visionnage ..." + RESET)
+                print()
+                proc = _play_episode_api(selected_episode, prefer_languages, player)
+                if proc:
+                    proc.wait()
+                else:
+                    break
+        return True
+
+
+# ===== FLUX TÉLÉCHARGER =====
+
+async def _run_download_flow_for_catalogue(config: dict[str, str], catalogue) -> None:
+    """2E CAS Télécharger : choisir saison/film ou épisode(s). Alerte scan uniquement si aucune saison ni film."""
+    language = config.get("language", "VOSTFR").strip()
+    prefer_languages = [language] if language in ("VF", "VOSTFR") else ["VOSTFR"]
+
+    # Toujours récupérer la liste des saisons/films ; l'alerte scan seulement si vide
+    try:
+        seasons = await catalogue.seasons()
+    except Exception as e:
+        print(RED + f"Erreur : {e}" + RESET)
+        return
+
+    if not seasons:
+        is_scan = getattr(catalogue, "is_manga", False) or (
+            getattr(catalogue, "categories", set()) and "Scans" in getattr(catalogue, "categories", set())
+        )
+        clear_screen()
+        if is_scan:
+            print(YELLOW + "Le téléchargement des scans n'est pas pris en charge." + RESET)
+            print()
+            print("Consultez le site anime-sama.to pour lire les scans en ligne.")
+        else:
+            print(YELLOW + "Aucun épisode ni film disponible pour le téléchargement." + RESET)
+        print()
+        try:
+            input("Appuyez sur Entrée... ")
+        except (EOFError, KeyboardInterrupt):
+            pass
+        return
+
+    # Construire l'arbre : Saison / [Tout] Saison /   Saison › Episode (Espace = sélectionner)
+    tree_lines = []
+    line_to_season_ep = {}  # ligne -> (season, episode | None)  None = toute la saison
+
+    for s in seasons:
+        try:
+            eps = await s.episodes()
+        except Exception:
+            eps = []
+        tree_lines.append("[Tout] " + s.name)
+        line_to_season_ep["[Tout] " + s.name] = (s, None)
+        for e in eps:
+            if len(seasons) > 1:
+                line = "  " + s.name + " › " + e.name
+            else:
+                line = "  " + e.name
+            tree_lines.append(line)
+            line_to_season_ep[line] = (s, e)
+
+    if not tree_lines:
+        print(YELLOW + "Aucun épisode disponible pour le téléchargement." + RESET)
+        return
+
+    choice = _fzf_select(
+        tree_lines,
+        "Saison / épisodes (↓↑ déplacer, Espace = sélectionner, Entrée = valider) : ",
+        multi=True,
+    )
+    if not choice:
+        return
+    if isinstance(choice, str):
+        choice = [choice]
+    choice_stripped = [str(x).strip() for x in choice]
+
+    seen_all_for = set()
+    for line in choice_stripped:
+        key = next((k for k in line_to_season_ep if k.strip() == line), None)
+        if key is None:
+            continue
+        s, e = line_to_season_ep[key]
+        if e is None:
+            seen_all_for.add(s.name)
+
+    selected_episodes = []
+    for line in choice_stripped:
+        key = next((k for k in line_to_season_ep if k.strip() == line), None)
+        if key is None:
+            continue
+        s, e = line_to_season_ep[key]
+        if e is not None and s.name not in seen_all_for:
+            selected_episodes.append((s, e))
+
+    for s in seasons:
+        if s.name in seen_all_for:
+            try:
+                for e in await s.episodes():
+                    selected_episodes.append((s, e))
+            except Exception:
+                pass
+
+    if not selected_episodes:
+        return
+
+    # Télécharger : un seul season avec des épisodes précis -> un dossier; sinon structure serie/season/episode
+    episodes_only = [e for _, e in selected_episodes]
+    seasons_involved = {s for s, _ in selected_episodes}
+    if len(seasons_involved) == 1:
+        base_path = _download_folder_anime(catalogue, next(iter(seasons_involved)).name)
+        base_path.mkdir(parents=True, exist_ok=True)
+        _download_episodes(
+            episodes_only,
+            catalogue,
+            base_path,
+            "{episode}",
+            prefer_languages,
+            zip_if_multiple=len(episodes_only) > 1,
+        )
+    else:
+        base_path = get_downloads_path()
+        _download_episodes(
+            episodes_only,
+            catalogue,
+            base_path,
+            "{serie}/{season}/{episode}",
+            prefer_languages,
+            zip_if_multiple=True,
+        )
+
+
+async def _run_download_flow(config: dict[str, str]) -> bool:
+    """Flux télécharger : recherche puis téléchargement."""
+    while True:
+        search_action = _menu_search()
+        if search_action == "quitter":
+            return False
+        if search_action == "menu":
+            return True
+
+        catalogue = None
+        if search_action == "recherche":
+            clear_screen()
+            try:
+                q = input(CYAN + "Titre de l'animé : " + RESET).strip()
+            except (EOFError, KeyboardInterrupt):
+                return False
+            if not q:
+                continue
+            print(BLUE + "Recherche..." + RESET)
+            catalogues = await _search_catalogues(q)
+            if not catalogues:
+                print(YELLOW + "Aucun résultat." + RESET)
+                input("Appuyez sur Entrée...")
+                continue
+            items = [c.name for c in catalogues]
+            choice = _fzf_select(items, "Choisir un animé : ", catalogues_for_preview=catalogues)
+            if not choice:
+                continue
+            for c in catalogues:
+                if (c.name or "").strip() == (choice or "").strip():
+                    catalogue = c
+                    break
+        elif search_action == "catalogue":
+            clear_screen()
+            print(BLUE + "Chargement du catalogue..." + RESET)
+            catalogues = await _get_catalogues("")
+            if not catalogues:
+                print(YELLOW + "Aucun résultat." + RESET)
+                input("Appuyez sur Entrée...")
+                continue
+            items = [c.name for c in catalogues]
+            choice = _fzf_select(items, "Recherche dynamique : ", catalogues_for_preview=catalogues)
+            if not choice:
+                continue
+            for c in catalogues:
+                if (c.name or "").strip() == (choice or "").strip():
+                    catalogue = c
+                    break
+
+        if not catalogue:
+            continue
+        await _run_download_flow_for_catalogue(config, catalogue)
+        # Rester en mode téléchargement : réafficher le menu recherche (catalogue / titre / menu / quitter)
+
+
+# ===== MAIN =====
+
+async def _async_main() -> None:
+    config = load_config()
+    if not config:
+        first_run_wizard()
+        config = load_config()
+    if not config:
+        _die("Configuration manquante.")
+    check_deps(config.get("player", "mpv"))
+    _switch_to_alternate_buffer()
+
+    while True:
+        action = _menu_main()
+        if action == "quitter" or not action:
+            _switch_from_alternate_buffer()
+            clear_screen()
+            print(GREEN + "À bientôt !" + RESET)
+            return
+        if action == "regarder":
+            stay = await _run_watch_flow(config)
+            if not stay:
+                _switch_from_alternate_buffer()
+                clear_screen()
+                print(GREEN + "À bientôt !" + RESET)
+                return
+        elif action == "historique":
+            _show_history()
+        elif action == "planning":
+            await _show_planning()
+        elif action == "télécharger":
+            stay = await _run_download_flow(config)
+            if not stay:
+                _switch_from_alternate_buffer()
+                clear_screen()
+                print(GREEN + "À bientôt !" + RESET)
+                return
+
+
+def _print_help() -> None:
+    """Affiche l'aide des commandes."""
+    print("""
+Usage: anime-sama [OPTIONS]
+
+  Lance l'interface pour regarder ou télécharger des animés depuis anime-sama.to.
+
+OPTIONS:
+  -h, --help        Affiche cette aide
+  --set-player      Changer le lecteur vidéo par défaut (MPV / VLC)
+  --set-lang        Changer la langue par défaut (VF / VOSTFR)
+
+SANS OPTION:
+  anime-sama        Lance le menu principal (Regarder / Télécharger / Quitter)
+
+EXEMPLES:
+  anime-sama
+  anime-sama --set-player
+  anime-sama --set-lang
+  anime-sama --help
+""")
+
+
+def _handle_set_player() -> None:
+    """Change le lecteur par défaut."""
+    config = load_config() or {}
+    player = config.get("player", "mpv")
+    items = ["MPV", "VLC"]
+    choice = _fzf_select(items, "Nouveau lecteur par défaut : ")
+    if not choice:
+        return
+    new_player = choice.strip()
+    save_config(new_player, config.get("language", "VOSTFR"))
+    print(GREEN + f"Lecteur par défaut : {new_player}" + RESET)
+
+
+def _handle_set_lang() -> None:
+    """Change la langue par défaut."""
+    config = load_config() or {}
+    lang = config.get("language", "VOSTFR")
+    items = ["VF", "VOSTFR"]
+    choice = _fzf_select(items, "Nouvelle langue par défaut : ")
+    if not choice:
+        return
+    new_lang = choice.strip()
+    save_config(config.get("player", "mpv"), new_lang)
+    print(GREEN + f"Langue par défaut : {new_lang}" + RESET)
+
+
+def main() -> None:
+    if len(sys.argv) >= 4 and sys.argv[1] == "--preview-cover":
+        _run_preview_cover(sys.argv[2], " ".join(sys.argv[3:]))
+        sys.exit(0)
+
+    # Afficher les messages des logs (warnings de l'API) sans le préfixe "WARNING"
+    logging.basicConfig(level=logging.INFO, format="%(message)s", force=True)
+    # Masquer les requêtes HTTP (httpx / httpcore)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+    args = [a for a in sys.argv[1:] if a in ("-h", "--help", "--set-player", "--set-lang")]
+    if "--help" in args or "-h" in args:
+        _print_help()
+        sys.exit(0)
+    if "--set-player" in args:
+        cfg = load_config() or {}
+        check_deps(cfg.get("player", "mpv"))
+        _switch_to_alternate_buffer()
+        clear_screen()
+        _handle_set_player()
+        _switch_from_alternate_buffer()
+        sys.exit(0)
+    if "--set-lang" in args:
+        if not _check_fzf_version():
+            _die("fzf >= 0.53.0 est requis. Installez-le : sudo apt install fzf")
+        _switch_to_alternate_buffer()
+        clear_screen()
+        _handle_set_lang()
+        _switch_from_alternate_buffer()
+        sys.exit(0)
+
+    try:
+        asyncio.run(_async_main())
+    except KeyboardInterrupt:
+        _switch_from_alternate_buffer()
+        clear_screen()
+        print(YELLOW + "Interruption." + RESET)
+        sys.exit(0)
+    except Exception as e:
+        _switch_from_alternate_buffer()
+        print(RED + f"Erreur : {e}" + RESET, file=sys.stderr)
+        sys.exit(1)
+    finally:
+        _switch_from_alternate_buffer()
