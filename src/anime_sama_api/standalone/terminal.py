@@ -21,7 +21,8 @@ def print_ascii_art() -> None:
         from importlib.resources import files
         content = (files("anime_sama_api") / "assets" / "ascii_art").read_text(encoding="utf-8")
         margin = "  "
-        for line in content.strip().splitlines():
+        # splitlines() sans strip() pour préserver l'indentation de la première ligne
+        for line in content.splitlines():
             print(CYAN + margin + line + RESET)
         print()
     except Exception:
@@ -79,6 +80,8 @@ def read_key() -> str:
                         return "left"
             if ch in ("\r", "\n"):
                 return "enter"
+            if ch in ("\x7f", "\x08"):
+                return "backspace"
             return ch.lower() if ch else ""
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old)

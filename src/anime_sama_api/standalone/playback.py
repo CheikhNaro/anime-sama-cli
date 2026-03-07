@@ -62,10 +62,18 @@ def play_episode_api(episode, prefer_languages: list[str], player: str):
         from anime_sama_api.episode import Episode
         if not isinstance(episode, Episode):
             return None
-        lang_list = [l for l in prefer_languages if l in ("VF", "VOSTFR")]
+        lang_list = [l for l in prefer_languages if l in ("VF", "VOSTFR", "VJSTFR", "VASTFR", "VCN", "VKR", "VQC")]
         if not lang_list:
-            lang_list = ["VOSTFR"]
+            lang_list = ["VOSTFR", "VF"]
         best = episode.best(lang_list)
+        if not best:
+            best = episode.best(["VOSTFR", "VF"])
+        if not best:
+            # Dernier recours : première URL disponible (toutes langues)
+            try:
+                best = next(episode.consume_player(["VOSTFR", "VF", "VJSTFR"]), None)
+            except StopIteration:
+                best = None
         if not best:
             return None
         return play_episode_url(best, player)

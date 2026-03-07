@@ -326,7 +326,7 @@ class AnimeSama:
         return result
 
     async def planning(self) -> list[PlanningDay]:
-        """Récupère le planning des sorties depuis la page planning du site."""
+        """Récupère le planning de la semaine depuis la page planning du site."""
         response = await self.client.get(f"{self.site_url}planning/")
         if response.is_error:
             return []

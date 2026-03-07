@@ -56,7 +56,7 @@ bans = []
 
 
 def first_run_wizard() -> None:
-    """Premier lancement : demande lecteur et langue."""
+    """Définissez vos préférences de lecteur et langue."""
     terminal.clear_screen()
     terminal.print_ascii_art()
     print(constants.BOLD + constants.CYAN + "  🎬 ANIME-SAMA CLI" + constants.RESET + " v" + constants.__version__)
@@ -75,3 +75,13 @@ def first_run_wizard() -> None:
     language = choice_lang.strip()
     save_config(player, language)
     print(constants.GREEN + "  ✓ Préférences enregistrées." + constants.RESET)
+    print()
+    try:
+        connect = (input(constants.CYAN + "  Se connecter à AniList ? (o/n) : " + constants.RESET) or "").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        connect = "n"
+    if connect in ("o", "oui", "y", "yes"):
+        from . import anilist
+        anilist.login_flow()
+    else:
+        print(constants.YELLOW + "  Vous pourrez vous connecter plus tard avec : anime-sama anilist login" + constants.RESET)

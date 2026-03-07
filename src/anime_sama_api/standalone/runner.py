@@ -27,6 +27,10 @@ OPTIONS:
   --set-player      Changer le lecteur vidéo par défaut (MPV / VLC)
   --set-lang        Changer la langue par défaut (VF / VOSTFR)
 
+COMMANDES:
+  anilist login     Se connecter à AniList et importer l'historique (déjà vus / à regarder)
+  completions SHELL Génère les complétions shell (bash, zsh, fish). Ex. : source <(anime-sama completions bash)
+
 SANS OPTION:
   anime-sama        Lance le menu principal (Regarder / Télécharger / Quitter)
 
@@ -82,8 +86,16 @@ async def async_main() -> None:
                 terminal.clear_screen()
                 print(constants.GREEN + "À bientôt !" + constants.RESET)
                 return
-        elif action == "historique":
-            menus.show_history()
+        elif action == "historique_anilist":
+            menus.show_history_anilist()
+        elif action == "historique_local":
+            menus.show_history_local()
+        elif action == "recherche_historique":
+            await menus.show_search_history()
+        elif action == "update_anilist":
+            from . import anilist
+            ok, msg = anilist.push_local_to_anilist()
+            menus.show_update_anilist_result(ok, msg)
         elif action == "planning":
             await planning.show_planning()
         elif action == "télécharger":
@@ -99,6 +111,20 @@ def main() -> None:
     if len(sys.argv) >= 4 and sys.argv[1] == "--preview-cover":
         fzf_utils.run_preview_cover(sys.argv[2], " ".join(sys.argv[3:]))
         sys.exit(0)
+
+    if len(sys.argv) >= 3 and sys.argv[1] == "anilist" and sys.argv[2] == "login":
+        from . import anilist
+        terminal.switch_to_alternate_buffer()
+        anilist.login_flow()
+        terminal.switch_from_alternate_buffer()
+        sys.exit(0)
+
+    if len(sys.argv) >= 3 and sys.argv[1] == "completions":
+        from . import completions
+        if completions.main(sys.argv[2].lower()):
+            sys.exit(0)
+        print("Usage: anime-sama completions {bash|zsh|fish}", file=sys.stderr)
+        sys.exit(1)
 
     logging.basicConfig(level=logging.INFO, format="%(message)s", force=True)
     logging.getLogger("httpx").setLevel(logging.WARNING)

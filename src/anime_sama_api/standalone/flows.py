@@ -21,7 +21,7 @@ async def run_watch_flow(cfg: dict[str, str]) -> bool:
     prefer_languages = [language]
 
     while True:
-        search_action = menus.menu_search()
+        search_action = menus.menu_search(title_override="👀 Regarder")
         if search_action == "quitter":
             return False
         if search_action == "menu":
@@ -62,7 +62,7 @@ async def run_watch_flow(cfg: dict[str, str]) -> bool:
                 input("Appuyez sur Entrée...")
                 continue
             items = [c.name for c in catalogues]
-            choice = fzf_utils.fzf_select(items, "Recherche dynamique (tapez pour filtrer) : ", catalogues_for_preview=catalogues)
+            choice = fzf_utils.fzf_select(items, "Tapez pour filtrer (↓↑ = naviguer, Esc = menu précédent) : ", catalogues_for_preview=catalogues)
             if not choice:
                 continue
             for c in catalogues:
@@ -92,143 +92,145 @@ async def run_watch_flow(cfg: dict[str, str]) -> bool:
             continue
 
         season_items = [s.name for s in seasons]
-        choice_s = fzf_utils.fzf_select(season_items, "Choisir la saison : ")
-        if not choice_s:
-            continue
-        selected_season = None
-        for s in seasons:
-            if (s.name or "").strip() == (choice_s or "").strip():
-                selected_season = s
-                break
-        if not selected_season:
-            continue
-
-        try:
-            episodes = await selected_season.episodes()
-        except Exception as e:
-            print(constants.RED + f"Erreur : {e}" + constants.RESET)
-            try:
-                input("Appuyez sur Entrée... ")
-            except (EOFError, KeyboardInterrupt):
-                pass
-            continue
-
-        if not episodes:
-            action = menus.alert_scan_read_online_and_return()
-            if action == "quit":
-                return False
-            continue
-
-        episode_items = [e.name for e in episodes]
-        choice_ep = fzf_utils.fzf_select(episode_items, "Choisir l'épisode : ")
-        if not choice_ep:
-            continue
-        selected_episode = None
-        idx_ep = -1
-        for i, e in enumerate(episodes):
-            if (e.name or "").strip() == (choice_ep or "").strip():
-                selected_episode = e
-                idx_ep = i
-                break
-        if not selected_episode:
-            continue
-
-        season_index = next((i for i, s in enumerate(seasons) if s.name == selected_season.name), 0)
-        ep_num = idx_ep + 1
-        anime_name = (catalogue.name or "").strip()
-        history.add_to_history(anime_name, season_index + 1, ep_num)
-        print()
-        print(constants.BOLD + constants.CYAN + f"Épisode N°{ep_num} en cours de visionnage ..." + constants.RESET)
-        print()
-        proc = playback.play_episode_api(selected_episode, prefer_languages, player)
-        if not proc:
-            print(constants.RED + "Impossible de lancer la lecture." + constants.RESET)
-            input("Appuyez sur Entrée...")
-            continue
-        proc.wait()
-
-        has_next = idx_ep < len(episodes) - 1
-        has_prev = idx_ep > 0
-        is_last_ep = idx_ep == len(episodes) - 1
-        has_next_season = season_index < len(seasons) - 1
-
         while True:
-            after = menus.menu_after_play(ep_num, has_next, has_prev, is_last_ep, has_next_season, anime_name)
-            if after == "quitter":
-                return False
-            if after == "menu":
-                return True
-            if after == "replay":
-                print()
-                print(constants.BOLD + constants.CYAN + f"Épisode N°{ep_num} en cours de visionnage ..." + constants.RESET)
-                print()
-                proc = playback.play_episode_api(selected_episode, prefer_languages, player)
-                if proc:
-                    proc.wait()
-                else:
-                    print(constants.RED + "Impossible de relancer l'épisode." + constants.RESET)
+            choice_s = fzf_utils.fzf_select(season_items, "Choisir la saison (↑↓ = se déplacer, Entrée = valider, Backspace = retour) : ")
+            if not choice_s:
+                break
+            selected_season = None
+            for s in seasons:
+                if (s.name or "").strip() == (choice_s or "").strip():
+                    selected_season = s
+                    break
+            if not selected_season:
                 continue
-            if after == "suivant":
-                idx_ep += 1
-                selected_episode = episodes[idx_ep]
-                ep_num = idx_ep + 1
-                has_prev = True
-                has_next = idx_ep < len(episodes) - 1
-                is_last_ep = idx_ep == len(episodes) - 1
-                history.add_to_history(anime_name, season_index + 1, ep_num)
-                print()
-                print(constants.BOLD + constants.CYAN + f"Épisode N°{ep_num} en cours de visionnage ..." + constants.RESET)
-                print()
-                proc = playback.play_episode_api(selected_episode, prefer_languages, player)
-                if proc:
-                    proc.wait()
-                else:
-                    print(constants.RED + "Impossible de lancer l'épisode suivant." + constants.RESET)
-                    break
-            elif after == "précédent":
-                idx_ep -= 1
-                selected_episode = episodes[idx_ep]
-                ep_num = idx_ep + 1
-                has_next = True
-                has_prev = idx_ep > 0
-                is_last_ep = False
-                history.add_to_history(anime_name, season_index + 1, ep_num)
-                print()
-                print(constants.BOLD + constants.CYAN + f"Épisode N°{ep_num} en cours de visionnage ..." + constants.RESET)
-                print()
-                proc = playback.play_episode_api(selected_episode, prefer_languages, player)
-                if proc:
-                    proc.wait()
-                else:
-                    print(constants.RED + "Impossible de lancer l'épisode précédent." + constants.RESET)
-                    break
-            elif after == "saison_suivante":
-                if not has_next_season:
-                    break
-                selected_season = seasons[season_index + 1]
-                season_index += 1
+
+            try:
+                episodes = await selected_season.episodes()
+            except Exception as e:
+                print(constants.RED + f"Erreur : {e}" + constants.RESET)
                 try:
-                    episodes = await selected_season.episodes()
-                except Exception:
+                    input("Appuyez sur Entrée... ")
+                except (EOFError, KeyboardInterrupt):
+                    pass
+                continue
+
+            if not episodes:
+                action = menus.alert_scan_read_online_and_return()
+                if action == "quit":
+                    return False
+                break
+
+            episode_items = [e.name for e in episodes]
+            choice_ep = fzf_utils.fzf_select(episode_items, "Choisir l'épisode (↑↓ = se déplacer, Entrée = valider, Backspace = retour) : ")
+            if not choice_ep:
+                continue
+            selected_episode = None
+            idx_ep = -1
+            for i, e in enumerate(episodes):
+                if (e.name or "").strip() == (choice_ep or "").strip():
+                    selected_episode = e
+                    idx_ep = i
                     break
-                if not episodes:
+            if not selected_episode:
+                continue
+
+            season_index = next((i for i, s in enumerate(seasons) if s.name == selected_season.name), 0)
+            ep_num = idx_ep + 1
+            anime_name = (catalogue.name or "").strip()
+            history.add_to_history(anime_name, season_index + 1, ep_num)
+            print()
+            print(constants.BOLD + constants.CYAN + f"Épisode N°{ep_num} en cours de visionnage ..." + constants.RESET)
+            print()
+            proc = playback.play_episode_api(selected_episode, prefer_languages, player)
+            if not proc:
+                print(constants.RED + "Impossible de lancer la lecture." + constants.RESET)
+                input("Appuyez sur Entrée...")
+                continue
+            proc.wait()
+
+            has_next = idx_ep < len(episodes) - 1
+            has_prev = idx_ep > 0
+            is_last_ep = idx_ep == len(episodes) - 1
+            has_next_season = season_index < len(seasons) - 1
+
+            while True:
+                after = menus.menu_after_play(ep_num, has_next, has_prev, is_last_ep, has_next_season, anime_name)
+                if after == "quitter":
+                    return False
+                if after == "menu":
+                    return True
+                if after == "replay":
+                    print()
+                    print(constants.BOLD + constants.CYAN + f"Épisode N°{ep_num} en cours de visionnage ..." + constants.RESET)
+                    print()
+                    proc = playback.play_episode_api(selected_episode, prefer_languages, player)
+                    if proc:
+                        proc.wait()
+                    else:
+                        print(constants.RED + "Impossible de relancer l'épisode." + constants.RESET)
+                    continue
+                if after == "suivant":
+                    idx_ep += 1
+                    selected_episode = episodes[idx_ep]
+                    ep_num = idx_ep + 1
+                    has_prev = True
+                    has_next = idx_ep < len(episodes) - 1
+                    is_last_ep = idx_ep == len(episodes) - 1
+                    history.add_to_history(anime_name, season_index + 1, ep_num)
+                    print()
+                    print(constants.BOLD + constants.CYAN + f"Épisode N°{ep_num} en cours de visionnage ..." + constants.RESET)
+                    print()
+                    proc = playback.play_episode_api(selected_episode, prefer_languages, player)
+                    if proc:
+                        proc.wait()
+                    else:
+                        print(constants.RED + "Impossible de lancer l'épisode suivant." + constants.RESET)
                     break
-                idx_ep = 0
-                selected_episode = episodes[0]
-                ep_num = 1
-                has_prev = False
-                has_next = len(episodes) > 1
-                is_last_ep = len(episodes) == 1
-                has_next_season = season_index < len(seasons) - 1
-                history.add_to_history(anime_name, season_index + 1, ep_num)
-                print()
-                print(constants.BOLD + constants.CYAN + f"Épisode N°{ep_num} en cours de visionnage ..." + constants.RESET)
-                print()
-                proc = playback.play_episode_api(selected_episode, prefer_languages, player)
-                if proc:
-                    proc.wait()
-                else:
+                elif after == "précédent":
+                    idx_ep -= 1
+                    selected_episode = episodes[idx_ep]
+                    ep_num = idx_ep + 1
+                    has_next = True
+                    has_prev = idx_ep > 0
+                    is_last_ep = False
+                    history.add_to_history(anime_name, season_index + 1, ep_num)
+                    print()
+                    print(constants.BOLD + constants.CYAN + f"Épisode N°{ep_num} en cours de visionnage ..." + constants.RESET)
+                    print()
+                    proc = playback.play_episode_api(selected_episode, prefer_languages, player)
+                    if proc:
+                        proc.wait()
+                    else:
+                        print(constants.RED + "Impossible de lancer l'épisode précédent." + constants.RESET)
                     break
+                elif after == "saison_suivante":
+                    if not has_next_season:
+                        break
+                    selected_season = seasons[season_index + 1]
+                    season_index += 1
+                    try:
+                        episodes = await selected_season.episodes()
+                    except Exception:
+                        break
+                    if not episodes:
+                        break
+                    idx_ep = 0
+                    selected_episode = episodes[0]
+                    ep_num = 1
+                    has_prev = False
+                    has_next = len(episodes) > 1
+                    is_last_ep = len(episodes) == 1
+                    has_next_season = season_index < len(seasons) - 1
+                    history.add_to_history(anime_name, season_index + 1, ep_num)
+                    print()
+                    print(constants.BOLD + constants.CYAN + f"Épisode N°{ep_num} en cours de visionnage ..." + constants.RESET)
+                    print()
+                    proc = playback.play_episode_api(selected_episode, prefer_languages, player)
+                    if proc:
+                        proc.wait()
+                    else:
+                        break
+            break
         return True
 
 
@@ -351,7 +353,7 @@ async def run_download_flow_for_catalogue(cfg: dict[str, str], catalogue) -> Non
 async def run_download_flow(cfg: dict[str, str]) -> bool:
     """Flux télécharger : recherche puis téléchargement."""
     while True:
-        search_action = menus.menu_search()
+        search_action = menus.menu_search(title_override="📥 Télécharger")
         if search_action == "quitter":
             return False
         if search_action == "menu":

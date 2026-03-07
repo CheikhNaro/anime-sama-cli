@@ -23,6 +23,10 @@ CONFIG_DIR = Path(
 ) / "anime-sama-cli"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 HISTORY_FILE = CONFIG_DIR / "history.json"
+ANILIST_AUTH_FILE = CONFIG_DIR / "anilist_auth.json"
+ANILIST_HISTORY_FILE = CONFIG_DIR / "anilist_history.json"
+ANILIST_GRAPHQL_URL = "https://graphql.anilist.co"
+ANILIST_OAUTH_URL = "https://anilist.co/api/v2/oauth/authorize?client_id=20148&response_type=token"
 ANIME_SAMA_API_CONFIG_DIR = Path(
     os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
 ) / "anime-sama_api"
