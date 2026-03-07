@@ -290,7 +290,7 @@ class AnimeSama:
             date_match = re.search(r"(\d{1,2}/\d{1,2})", section)
             date_str = date_match.group(1) if date_match else ""
 
-            # Cartes : div avec planning-card, type Anime/Scans, lang, data-title, href, card-title, optionnel info-text (heure)
+            # Cartes : uniquement Anime (pas les Scans)
             card_pattern = re.compile(
                 r'<div[^>]*\b(Anime|Scans)\s+(VOSTFR|VF|VJ)[^>]*\bplanning-card\b'
                 r'[^>]*data-title="([^"]*)"[^>]*>'
@@ -302,13 +302,15 @@ class AnimeSama:
             entries_list: list[PlanningEntry] = []
             for card in card_pattern.finditer(section):
                 kind, lang, _data_title, path, title, time_str = card.groups()
+                if (kind or "").strip().lower() != "anime":
+                    continue
                 title = unescape(title).strip() if title else ""
                 time_str = (time_str or "").strip()
                 full_url = path if path.startswith("http") else base_url + path
                 entries_list.append(
                     PlanningEntry(
                         title=title,
-                        kind=kind or "Anime",
+                        kind="Anime",
                         time=time_str,
                         lang=lang or "VOSTFR",
                         url=full_url,
