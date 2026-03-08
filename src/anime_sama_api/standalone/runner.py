@@ -47,9 +47,11 @@ def handle_set_player() -> None:
     items = ["MPV", "VLC"]
     choice = fzf_utils.fzf_select(items, "Nouveau lecteur par défaut : ")
     if not choice:
+        print(constants.YELLOW + "Aucune modification." + constants.RESET)
         return
-    config.save_config(choice.strip(), cfg.get("language", "VOSTFR"))
-    print(constants.GREEN + f"Lecteur par défaut : {choice.strip()}" + constants.RESET)
+    player = choice.strip().upper()
+    config.save_config(player, cfg.get("language", "VOSTFR"))
+    print(constants.GREEN + f"Lecteur par défaut : {player}" + constants.RESET)
 
 
 def handle_set_lang() -> None:
@@ -135,8 +137,9 @@ def main() -> None:
         print_help()
         sys.exit(0)
     if "--set-player" in args:
+        if not fzf_utils.check_fzf_version():
+            terminal.die("fzf >= 0.53.0 est requis. Installez-le : sudo apt install fzf")
         cfg = config.load_config() or {}
-        fzf_utils.check_deps(cfg.get("player", "mpv"))
         terminal.switch_to_alternate_buffer()
         terminal.clear_screen()
         terminal.print_ascii_art()
