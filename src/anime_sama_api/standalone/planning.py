@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from datetime import datetime
 from types import SimpleNamespace
@@ -160,22 +161,36 @@ async def show_planning() -> None:
             return None
         return slug_to_catalogue.get(menus.slug_from_planning_url(entry.url))
 
+    # Cache : nom animé -> catalogue (recherche site) pour la preview ; chargement en parallèle
+    unique_titles_list = list({(row[2].title or "").strip() for row in lines_and_entries if row[2] is not None and (row[2].title or "").strip()})
+    title_to_catalogue: dict[str, Any] = {}
+    if unique_titles_list:
+        print(constants.BLUE + "  Chargement des infos..." + constants.RESET)
+        tasks = [api_helpers.get_catalogue_for_planning_entry(title) for title in unique_titles_list]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for title, result in zip(unique_titles_list, results):
+            title_to_catalogue[title] = result if not isinstance(result, Exception) else None
+
+    # Preview uniquement pour les lignes animé (pas pour les en-têtes de date type "Lundi (02/03)")
     preview_objects = []
     for row in lines_and_entries:
         line, _day, entry = row[0], row[1], row[2]
         if entry is None:
-            preview_objects.append(SimpleNamespace(name=line, title=line, image_url="", site_url=constants.SITE_URL, page_url="", genres=[], categories=set()))
             continue
-        cat = _catalogue_for_entry(entry)
+        cat = title_to_catalogue.get((entry.title or "").strip()) or _catalogue_for_entry(entry)
         genres = list(getattr(cat, "genres", None) or []) if cat else []
         categories = set(getattr(cat, "categories", None) or set()) if cat else set()
+        image_url = (getattr(cat, "image_url", None) or "") if cat else slug_to_cover.get(menus.slug_from_planning_url(entry.url), "")
+        page_url = (getattr(cat, "url", None) or "").strip().rstrip("/")
+        if not page_url or not page_url.startswith("http"):
+            page_url = _catalogue_page_url(entry.url) if entry else ""
         preview_objects.append(
             SimpleNamespace(
                 name=line,
-                title=(entry.title if entry else line),
-                image_url=slug_to_cover.get(menus.slug_from_planning_url(entry.url), "") if entry else "",
+                title=(getattr(cat, "name", None) or entry.title or line) if cat else (entry.title or line),
+                image_url=image_url,
                 site_url=constants.SITE_URL,
-                page_url=_catalogue_page_url(entry.url) if entry else "",
+                page_url=page_url,
                 genres=genres,
                 categories=categories,
             )

@@ -25,3 +25,19 @@ async def search_catalogues(query: str):
     client = get_client()
     api = AnimeSama(constants.SITE_URL, client=client)
     return await api.search(query.strip())
+
+
+async def get_catalogue_for_planning_entry(anime_name: str):
+    """
+    Récupère les infos réelles d'un animé depuis le site (page catalogue)
+    à partir de son nom (ex. "Jujutsu Kaisen" -> https://anime-sama.to/catalogue/jujutsu-kaisen/).
+    Utilisé pour afficher la preview du planning comme celle du catalogue.
+    Retourne un objet catalogue (avec name, url, image_url, genres, categories) ou None.
+    """
+    if not (anime_name or "").strip():
+        return None
+    try:
+        catalogues = await search_catalogues((anime_name or "").strip())
+        return catalogues[0] if catalogues else None
+    except Exception:
+        return None
