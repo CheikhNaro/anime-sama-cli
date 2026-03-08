@@ -250,7 +250,6 @@ def fzf_select(
     fzf_input = "\n".join(items)
     cmd = [
         "fzf", "--reverse", "--cycle", f"--prompt={prompt}", "--height=100%",
-        "--bind=backspace:abort",
     ]
     if multi:
         cmd.append("-m")
