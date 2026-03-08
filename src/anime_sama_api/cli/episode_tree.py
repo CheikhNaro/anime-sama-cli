@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 from textual.app import App, ComposeResult
+from rich.text import Text
 from textual.binding import Binding
 from textual.message import Message
 from textual.widgets import Static, Tree
@@ -177,6 +178,15 @@ MultiSeasonNodeData = tuple[Season, list[Episode]] | tuple[Season, Episode] | No
 TREE_HINTS = "↓↑ = naviguer · Esc = menu précédent · Tab = Déplier/Replier · Espace = Select · Entrée = Valider"
 
 
+def _load_ascii_art() -> str:
+    """Charge le contenu ASCII art du package (anime-sama)."""
+    try:
+        from importlib.resources import files
+        return (files("anime_sama_api") / "assets" / "ascii_art").read_text(encoding="utf-8")
+    except Exception:
+        return ""
+
+
 class MultiSeasonEpisodeTree(App[list[tuple[Season, Episode]] | None]):
     """Tree Textual avec une saison par nœud parent collapsible.
     Structure : Racine > Saison 1 (▶) > Episode 1, 2, … ; Saison 2 (▶) > …
@@ -190,13 +200,22 @@ class MultiSeasonEpisodeTree(App[list[tuple[Season, Episode]] | None]):
         ("escape", "quit", "Menu précédent"),
     ]
 
-    # Fond sombre type terminal ; indications en haut
+    # Fond sombre type terminal ; ASCII art + indications
     CSS = """
     Screen {
         background: #0c0c0c;
     }
     Header {
         display: none;
+    }
+    #tree-ascii-art {
+        padding: 0 1 0 1;
+        padding-left: 2;
+        margin-top: 1;
+        margin-bottom: 1;
+        background: #0c0c0c;
+        color: #00bfff;
+        height: auto;
     }
     #tree-hints {
         padding: 0 1 0 1;
@@ -224,6 +243,9 @@ class MultiSeasonEpisodeTree(App[list[tuple[Season, Episode]] | None]):
 
     def compose(self) -> ComposeResult:
         yield Static(TREE_HINTS, id="tree-hints")
+        ascii_art = _load_ascii_art()
+        if ascii_art:
+            yield Static(Text(ascii_art, style="bold cyan"), id="tree-ascii-art")
         tree = EpisodeTreeWidget(self._title, data=None, id="episode-tree")
         for season, episodes in self._seasons_with_episodes:
             season_node = tree.root.add(
