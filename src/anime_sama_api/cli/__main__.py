@@ -10,6 +10,7 @@ from rich.status import Status
 from anime_sama_api.cli import downloader, internal_player
 from anime_sama_api.cli.config import config
 from anime_sama_api.cli.episode_extra_info import convert_with_extra_info
+from anime_sama_api.cli.episode_tree import run_episode_tree
 from anime_sama_api.cli.utils import safe_input, select_one, select_range
 from anime_sama_api.top_level import AnimeSama, find_site_url
 
@@ -48,15 +49,16 @@ async def async_main() -> None:
                 episodes = await s.episodes()
                 selected_episodes.extend(episodes)
     else:
-        # Single season behavior (manual episode selection)
+        # Single season: affichage des épisodes en Tree (Textual)
         season = selected_seasons[0]
         with spinner(f"Getting episode list for [blue]{season.name}"):
             episodes = await season.episodes()
 
-        console.print(f"\n[cyan bold underline]{season.serie_name} - {season.name}")
-        selected_episodes = select_range(
-            episodes, msg="Choose episode(s)", print_choices=True
-        )
+        # Tree : Espace = sélection (parent = tout, enfants = épisodes), Tab = déplier/replier, Entrée = valider
+        selected_episodes = run_episode_tree(season, episodes)
+        if not selected_episodes:
+            console.print("\n[red]Aucun épisode sélectionné.")
+            return
 
     if config.download:
         downloader.multi_download(

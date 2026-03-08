@@ -13,6 +13,8 @@ from . import menus
 from . import playback
 from . import download_utils
 
+from anime_sama_api.cli.episode_tree import run_multi_season_episode_tree_async
+
 
 async def run_watch_flow(cfg: dict[str, str]) -> bool:
     """Retourne True pour rester dans l'app, False pour quitter."""
@@ -55,7 +57,7 @@ async def run_watch_flow(cfg: dict[str, str]) -> bool:
 
         elif search_action == "catalogue":
             terminal.clear_screen()
-            print(constants.BLUE + "Chargement du catalogue complet..." + constants.RESET)
+            print(constants.BLUE + "Chargement du catalogue ..." + constants.RESET)
             catalogues = await api_helpers.get_catalogues("")
             if not catalogues:
                 print(constants.YELLOW + "Aucun résultat." + constants.RESET)
@@ -263,65 +265,23 @@ async def run_download_flow_for_catalogue(cfg: dict[str, str], catalogue) -> Non
             pass
         return
 
-    tree_lines = []
-    line_to_season_ep = {}
-
+    seasons_with_episodes: list[tuple] = []
     for s in seasons:
         try:
             eps = await s.episodes()
         except Exception:
             eps = []
-        tree_lines.append("[Tout] " + s.name)
-        line_to_season_ep["[Tout] " + s.name] = (s, None)
-        for e in eps:
-            if len(seasons) > 1:
-                line = "  " + s.name + " › " + e.name
-            else:
-                line = "  " + e.name
-            tree_lines.append(line)
-            line_to_season_ep[line] = (s, e)
+        seasons_with_episodes.append((s, eps))
 
-    if not tree_lines:
+    if not seasons_with_episodes or all(not eps for _, eps in seasons_with_episodes):
         print(constants.YELLOW + "Aucun épisode disponible pour le téléchargement." + constants.RESET)
         return
 
-    choice = fzf_utils.fzf_select(
-        tree_lines,
-        "Saison / épisodes (↓↑ déplacer, Espace = sélectionner, Entrée = valider) : ",
-        multi=True,
+    title = (getattr(catalogue, "name", None) or "Saisons").strip()
+    selected_episodes = await run_multi_season_episode_tree_async(
+        seasons_with_episodes,
+        title=title,
     )
-    if not choice:
-        return
-    if isinstance(choice, str):
-        choice = [choice]
-    choice_stripped = [str(x).strip() for x in choice]
-
-    seen_all_for = set()
-    for line in choice_stripped:
-        key = next((k for k in line_to_season_ep if k.strip() == line), None)
-        if key is None:
-            continue
-        s, e = line_to_season_ep[key]
-        if e is None:
-            seen_all_for.add(s.name)
-
-    selected_episodes = []
-    for line in choice_stripped:
-        key = next((k for k in line_to_season_ep if k.strip() == line), None)
-        if key is None:
-            continue
-        s, e = line_to_season_ep[key]
-        if e is not None and s.name not in seen_all_for:
-            selected_episodes.append((s, e))
-
-    for s in seasons:
-        if s.name in seen_all_for:
-            try:
-                for e in await s.episodes():
-                    selected_episodes.append((s, e))
-            except Exception:
-                pass
-
     if not selected_episodes:
         return
 
