@@ -12,10 +12,10 @@ from typing import Any
 from . import constants
 from . import terminal
 from . import config
-from . import fzf_utils
 from . import api_helpers
 from . import menus
 from . import playback
+from .planning_tui import run_planning_tui_async
 
 
 async def show_planning() -> None:
@@ -125,8 +125,6 @@ async def show_planning() -> None:
             line = f"   • {mid}{title_part}{suffix}"
             lines_and_entries.append((line, day, entry, info))
 
-    items = [t[0] for t in lines_and_entries]
-    planning_prompt = "Choisir un animé (↓↑ pour naviguer, Esc pour revenir au menu principal) : "
     base = constants.SITE_URL.rstrip("/")
 
     def _catalogue_page_url(entry_url: str) -> str:
@@ -196,26 +194,11 @@ async def show_planning() -> None:
             )
         )
 
-    while True:
-        choice = fzf_utils.fzf_select(
-            items,
-            planning_prompt,
-            catalogues_for_preview=preview_objects,
-        )
-        if not choice:
-            return
-        selected = next((t for t in lines_and_entries if t[0] == choice), None)
-        if not selected:
-            return
-        _line, _day, entry, info = selected[0], selected[1], selected[2], selected[3]
-        if entry is None:
-            continue
-        _season_label, available = info or ("Saison 1", False)
-        if not available:
-            menus.alert_planning_episode_not_yet_released()
-            continue
-        break
-        # Sélection d’un en-tête de jour : on réaffiche pour choisir un animé
+    result = await run_planning_tui_async(lines_and_entries, preview_objects)
+    if not result:
+        return
+    _line, _day, entry, info = result[0], result[1], result[2], result[3]
+    _season_label, _available = info or ("Saison 1", False)
 
     cfg = config.load_config() or {}
     player = cfg.get("player", "mpv").strip()
@@ -327,23 +310,8 @@ async def show_planning() -> None:
         if action != "planning":
             break
 
-        while True:
-            choice = fzf_utils.fzf_select(
-                items,
-                planning_prompt,
-                catalogues_for_preview=preview_objects,
-            )
-            if not choice:
-                return
-            selected = next((t for t in lines_and_entries if t[0] == choice), None)
-            if not selected:
-                return
-            _line, _day, entry, info = selected[0], selected[1], selected[2], selected[3]
-            if entry is None:
-                continue
-            _sl, available = info or ("Saison 1", False)
-            if not available:
-                menus.alert_planning_episode_not_yet_released()
-                continue
-            break
+        result2 = await run_planning_tui_async(lines_and_entries, preview_objects)
+        if not result2:
+            return
+        _line, _day, entry, info = result2[0], result2[1], result2[2], result2[3]
         episodes, ep_idx = await _load_episodes_for_planning_entry(entry)
