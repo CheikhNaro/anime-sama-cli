@@ -29,7 +29,17 @@ https://github.com/user-attachments/assets/f10d82de-1a6d-47ea-b43e-a91fd9e10ed3
 - **fzf** (≥ 0.53)
 - **MPV** ou **VLC**
 - **yt-dlp** (téléchargements et lecture)
-- *Optionnel* : **ImageMagick** terminal compatible images (Kitty, WezTerm, iTerm2)
+- *Optionnel* : **ImageMagick** (preview fzf + netteté des covers)
+
+### Qualité des images (covers)
+
+Les images sont redimensionnées puis **renforcées en netteté** (UnsharpMask / `-unsharp`) pour limiter le flou, quel que soit le terminal. Pour aller plus loin, vous pouvez upscaler vous‑même les images du cache avec un outil IA (le résultat sera utilisé au prochain affichage) :
+
+- **Real-ESRGAN** (anime, très bon) : [github.com/xinntao/Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN)
+- **waifu2x** (style anime) : [github.com/nagadomi/waifu2x](https://github.com/nagadomi/waifu2x)
+- **Upscayl** (interface graphique) : [upscayl.org](https://upscayl.org)
+
+Cache des covers : `~/.cache/anime-sama-cli/covers/` (supprimer le dossier pour régénérer après upscale manuel).
 
 ### Installation des dépendances
 

@@ -38,7 +38,10 @@ FZF_MIN_VERSION = (0, 53, 0)
 COVER_CACHE_DIR = Path(
     os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache"))
 ) / "anime-sama-cli" / "covers"
-COVER_MAX_HEIGHT = 120
+# Hauteur max des covers (redimensionnement ImageMagick/fzf), en pixels.
+# Un renforcement de netteté (UnsharpMask / -unsharp) est appliqué après redimensionnement.
+# Pour un upscale IA optionnel (hors app) : Real-ESRGAN, waifu2x, ou Upscayl.
+COVER_MAX_HEIGHT = 200
 
 # Chemin du script principal (pour la preview fzf), défini au lancement
 PREVIEW_SCRIPT_PATH: str | None = None

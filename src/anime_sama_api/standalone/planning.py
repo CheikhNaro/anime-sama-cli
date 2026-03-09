@@ -194,11 +194,20 @@ async def show_planning() -> None:
             )
         )
 
-    result = await run_planning_tui_async(lines_and_entries, preview_objects)
-    if not result:
-        return
-    _line, _day, entry, info = result[0], result[1], result[2], result[3]
-    _season_label, _available = info or ("Saison 1", False)
+    while True:
+        result = await run_planning_tui_async(lines_and_entries, preview_objects)
+        if not result:
+            return
+        _line, _day, entry, info = result[0], result[1], result[2], result[3]
+        _season_label, _available = info or ("Saison 1", False)
+        if not _available:
+            terminal.clear_screen()
+            print(constants.YELLOW + "Épisode non disponible. Veuillez patienter jusqu'à sa sortie !" + constants.RESET)
+            print()
+            print("Appuyez sur une touche pour revenir au planning...")
+            terminal.read_key()
+            continue
+        break
 
     cfg = config.load_config() or {}
     player = cfg.get("player", "mpv").strip()
@@ -310,8 +319,18 @@ async def show_planning() -> None:
         if action != "planning":
             break
 
-        result2 = await run_planning_tui_async(lines_and_entries, preview_objects)
-        if not result2:
-            return
-        _line, _day, entry, info = result2[0], result2[1], result2[2], result2[3]
+        while True:
+            result2 = await run_planning_tui_async(lines_and_entries, preview_objects)
+            if not result2:
+                return
+            _line, _day, entry, info = result2[0], result2[1], result2[2], result2[3]
+            _season_label2, _available2 = info or ("Saison 1", False)
+            if not _available2:
+                terminal.clear_screen()
+                print(constants.YELLOW + "Épisode non disponible. Veuillez patienter jusqu'à sa sortie !" + constants.RESET)
+                print()
+                print("Appuyez sur une touche pour revenir au planning...")
+                terminal.read_key()
+                continue
+            break
         episodes, ep_idx = await _load_episodes_for_planning_entry(entry)

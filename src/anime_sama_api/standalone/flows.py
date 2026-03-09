@@ -3,12 +3,15 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from . import constants
 from . import terminal
 from . import config
 from . import history
 from . import fzf_utils
 from . import api_helpers
+from . import catalogue_tui
 from . import menus
 from . import playback
 from . import download_utils
@@ -31,11 +34,7 @@ async def run_watch_flow(cfg: dict[str, str]) -> bool:
 
         catalogue = None
         if search_action == "recherche":
-            terminal.clear_screen()
-            try:
-                q = input(constants.CYAN + "Titre de l'animé : " + constants.RESET).strip()
-            except (EOFError, KeyboardInterrupt):
-                return False
+            q = await catalogue_tui.run_search_prompt_tui_async()
             if not q:
                 continue
             print(constants.BLUE + "Recherche..." + constants.RESET)
@@ -44,14 +43,9 @@ async def run_watch_flow(cfg: dict[str, str]) -> bool:
                 print(constants.YELLOW + "Aucun résultat." + constants.RESET)
                 input("Appuyez sur Entrée...")
                 continue
-            items = [c.name for c in catalogues]
-            choice = fzf_utils.fzf_select(items, "Choisir un animé : ", catalogues_for_preview=catalogues)
-            if not choice:
-                continue
-            for c in catalogues:
-                if (c.name or "").strip() == (choice or "").strip():
-                    catalogue = c
-                    break
+            catalogue = await catalogue_tui.run_catalogue_tui_async(
+                catalogues, is_search_results=True
+            )
             if not catalogue:
                 continue
 
@@ -63,18 +57,22 @@ async def run_watch_flow(cfg: dict[str, str]) -> bool:
                 print(constants.YELLOW + "Aucun résultat." + constants.RESET)
                 input("Appuyez sur Entrée...")
                 continue
-            items = [c.name for c in catalogues]
-            choice = fzf_utils.fzf_select(items, "Tapez pour filtrer (↓↑ = naviguer, Esc = menu précédent) : ", catalogues_for_preview=catalogues)
-            if not choice:
-                continue
-            for c in catalogues:
-                if (c.name or "").strip() == (choice or "").strip():
-                    catalogue = c
-                    break
+            catalogue = await catalogue_tui.run_catalogue_tui_async(
+                catalogues, is_search_results=False
+            )
             if not catalogue:
                 continue
 
         if not catalogue:
+            continue
+
+        cats = getattr(catalogue, "categories", set()) or set()
+        is_scan_only = "Scans" in cats and "Anime" not in cats and "Film" not in cats
+        if is_scan_only:
+            await asyncio.sleep(0.25)
+            action = menus.alert_scan_read_online_and_return()
+            if action == "quit":
+                return False
             continue
 
         try:
@@ -123,7 +121,7 @@ async def run_watch_flow(cfg: dict[str, str]) -> bool:
                 break
 
             episode_items = [e.name for e in episodes]
-            choice_ep = fzf_utils.fzf_select(episode_items, "Choisir l'épisode (↑↓ = se déplacer, Entrée = valider, Backspace = retour) : ")
+            choice_ep = fzf_utils.fzf_select(episode_items, "Choisir l'épisode (↑↓ = se déplacer, Entrée = valider, Backspace/Esc = retour) : ")
             if not choice_ep:
                 continue
             selected_episode = None
@@ -248,11 +246,10 @@ async def run_download_flow_for_catalogue(cfg: dict[str, str], catalogue) -> Non
         return
 
     if not seasons:
-        is_scan = getattr(catalogue, "is_manga", False) or (
-            getattr(catalogue, "categories", set()) and "Scans" in getattr(catalogue, "categories", set())
-        )
+        cats = getattr(catalogue, "categories", set()) or set()
+        is_scan_only = "Scans" in cats and "Anime" not in cats and "Film" not in cats
         terminal.clear_screen()
-        if is_scan:
+        if is_scan_only:
             print(constants.YELLOW + "Le téléchargement des scans n'est pas pris en charge." + constants.RESET)
             print()
             print("Consultez le site anime-sama.to pour lire les scans en ligne.")
@@ -321,11 +318,7 @@ async def run_download_flow(cfg: dict[str, str]) -> bool:
 
         catalogue = None
         if search_action == "recherche":
-            terminal.clear_screen()
-            try:
-                q = input(constants.CYAN + "Titre de l'animé : " + constants.RESET).strip()
-            except (EOFError, KeyboardInterrupt):
-                return False
+            q = await catalogue_tui.run_search_prompt_tui_async()
             if not q:
                 continue
             print(constants.BLUE + "Recherche..." + constants.RESET)
@@ -334,14 +327,11 @@ async def run_download_flow(cfg: dict[str, str]) -> bool:
                 print(constants.YELLOW + "Aucun résultat." + constants.RESET)
                 input("Appuyez sur Entrée...")
                 continue
-            items = [c.name for c in catalogues]
-            choice = fzf_utils.fzf_select(items, "Choisir un animé : ", catalogues_for_preview=catalogues)
-            if not choice:
+            catalogue = await catalogue_tui.run_catalogue_tui_async(
+                catalogues, is_search_results=True
+            )
+            if not catalogue:
                 continue
-            for c in catalogues:
-                if (c.name or "").strip() == (choice or "").strip():
-                    catalogue = c
-                    break
         elif search_action == "catalogue":
             terminal.clear_screen()
             print(constants.BLUE + "Chargement du catalogue..." + constants.RESET)
@@ -350,15 +340,22 @@ async def run_download_flow(cfg: dict[str, str]) -> bool:
                 print(constants.YELLOW + "Aucun résultat." + constants.RESET)
                 input("Appuyez sur Entrée...")
                 continue
-            items = [c.name for c in catalogues]
-            choice = fzf_utils.fzf_select(items, "Recherche dynamique : ", catalogues_for_preview=catalogues)
-            if not choice:
+            catalogue = await catalogue_tui.run_catalogue_tui_async(
+                catalogues, is_search_results=False
+            )
+            if not catalogue:
                 continue
-            for c in catalogues:
-                if (c.name or "").strip() == (choice or "").strip():
-                    catalogue = c
-                    break
 
         if not catalogue:
             continue
+
+        cats = getattr(catalogue, "categories", set()) or set()
+        is_scan_only = "Scans" in cats and "Anime" not in cats and "Film" not in cats
+        if is_scan_only:
+            await asyncio.sleep(0.25)
+            action = menus.alert_scan_read_online_and_return()
+            if action == "quit":
+                return False
+            continue
+
         await run_download_flow_for_catalogue(cfg, catalogue)

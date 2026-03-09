@@ -390,7 +390,14 @@ def alert_scan_read_online_and_return() -> Literal["menu", "quit"]:
     terminal.print_ascii_art()
     print(constants.YELLOW + "Ceci est un scan à lire sur le site officiel." + constants.RESET)
     print()
-    items = ["Revenir au menu principal", "Quitter"]
+    print(constants.CYAN + "Appuyez sur Entrée pour continuer..." + constants.RESET)
+    try:
+        input()
+    except (EOFError, KeyboardInterrupt):
+        return "quit"
+    terminal.clear_screen()
+    terminal.print_ascii_art()
+    items = ["Revenir au menu précédent", "Quitter"]
     choice = fzf_utils.fzf_select(items, "Que faire ? ")
     if not choice or "Quitter" in choice:
         return "quit"
