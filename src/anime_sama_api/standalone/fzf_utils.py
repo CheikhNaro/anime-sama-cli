@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import sys
+import io
 from typing import Any
 
 from . import constants
@@ -163,6 +164,9 @@ def run_preview_cover(mapping_path: str, line: str) -> None:
         return
 
     width = _preview_width()
+    
+    # Utilisation d'un buffer pour éviter les clignotements (tout écrire d'un coup)
+    buffer = io.BytesIO()
 
     if image_url:
         constants.COVER_CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -198,16 +202,15 @@ def run_preview_cover(mapping_path: str, line: str) -> None:
                         sixel_bytes = bytes(result.stdout)
                         render_cache.write_bytes(sixel_bytes)
                 if sixel_bytes:
-                    sys.stdout.buffer.write(sixel_bytes)
-                    sys.stdout.flush()
+                    buffer.write(sixel_bytes)
             except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
                 pass
 
-    sys.stdout.write("\n")
-    sep_line = "\033[90m" + "─" * width + "\033[0m\n"
+    buffer.write(b"\n")
+    sep_line = ("\033[90m" + "─" * width + "\033[0m\n").encode("utf-8")
 
     def sep() -> None:
-        sys.stdout.write(sep_line)
+        buffer.write(sep_line)
 
     title = (entry.get("title") or entry.get("name") or "").strip()
     genre = (entry.get("genre") or "").strip()
@@ -232,22 +235,26 @@ def run_preview_cover(mapping_path: str, line: str) -> None:
         lines = textwrap.wrap(value, width=wrap_w) if value else [""]
         if not lines:
             lines = [""]
-        sys.stdout.write(constants.CYAN + label + "\033[0m " + lines[0] + "\n")
+        row = (constants.CYAN + label + "\033[0m " + lines[0] + "\n").encode("utf-8")
+        buffer.write(row)
         for part in lines[1:]:
-            sys.stdout.write(" " * (label_len + 1) + part + "\n")
+            buffer.write((" " * (label_len + 1) + part + "\n").encode("utf-8"))
         sep()
 
     sep()
     print_row("Titre : ", title)
     print_row("Genre : ", genre)
     print_row("Type : ", type_val)
-    sys.stdout.write(constants.CYAN + "Synopsis :" + "\033[0m\n\n")
+    buffer.write((constants.CYAN + "Synopsis :" + "\033[0m\n\n").encode("utf-8"))
     if synopsis:
         synopsis_flat = " ".join(synopsis.split())
         for part in textwrap.wrap(synopsis_flat, width=width):
-            sys.stdout.write(part + "\n")
+            buffer.write((part + "\n").encode("utf-8"))
     else:
-        sys.stdout.write("—\n")
+        buffer.write("—\n".encode("utf-8"))
+    
+    # Envoi final de tout le contenu au terminal en une seule fois
+    sys.stdout.buffer.write(buffer.getvalue())
     sys.stdout.flush()
 
 
