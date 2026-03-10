@@ -178,3 +178,4 @@ Après connexion, l’historique AniList est disponible dans le menu (Historique
 ```bash
 anime-sama --help
 ```
+

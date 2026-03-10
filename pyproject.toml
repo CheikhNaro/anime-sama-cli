@@ -38,7 +38,7 @@ dependencies = [
 
 [project.scripts]
 anime-sama-cli = "anime_sama_api.cli_standalone:main"
-anime-sama = "anime_sama_api:main"
+anime-sama = "anime_sama_api.cli_standalone:main"
 
 [project.urls]
 Repository = "https://github.com/CheikhNaro/anime-sama-cli/"
