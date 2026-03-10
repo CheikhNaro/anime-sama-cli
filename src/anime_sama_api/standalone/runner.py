@@ -14,6 +14,7 @@ from . import fzf_utils
 from . import menus
 from . import planning
 from . import flows
+from . import system_deps
 
 
 def print_help() -> None:
@@ -136,6 +137,9 @@ def main() -> None:
     if "--help" in args or "-h" in args:
         print_help()
         sys.exit(0)
+
+    system_deps.notify_if_missing()
+
     if "--set-player" in args:
         if not fzf_utils.check_fzf_version():
             terminal.die("fzf >= 0.53.0 est requis. Installez-le : sudo apt install fzf")

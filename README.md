@@ -16,6 +16,7 @@ Le projet a besoin des éléments suivants pour fonctionner.
 | **fzf** | Menu de sélection interactif (recherche, choix d’épisodes, etc.) | 0.53 |
 | **MPV** ou **VLC** | Lecture vidéo des épisodes | — |
 | **yt-dlp** | Téléchargement et lecture des flux vidéo | récente |
+| **ffmpeg** | Requis par yt-dlp pour fusionner flux audio/vidéo | — |
 
 ### Dépendance optionnelle
 
@@ -52,9 +53,9 @@ Sur les distributions basées sur Debian (Ubuntu, Linux Mint, etc.), utilisez `a
    ```bash
    sudo apt update
    ```
-2. Installer Python, pip, fzf, un lecteur vidéo et yt-dlp :
+2. Installer Python, pip, fzf, un lecteur vidéo, ffmpeg et yt-dlp :
    ```bash
-   sudo apt install python3 python3-pip fzf mpv yt-dlp
+   sudo apt install python3 python3-pip fzf mpv ffmpeg yt-dlp
    ```
    Pour utiliser VLC au lieu de MPV :
    ```bash
@@ -73,7 +74,7 @@ Sur Arch (et dérivés comme Manjaro), utilisez `pacman` :
 
 1. Installer les paquets :
    ```bash
-   sudo pacman -S python python-pip fzf mpv yt-dlp
+   sudo pacman -S python python-pip fzf mpv ffmpeg yt-dlp
    ```
    Pour utiliser VLC au lieu de MPV :
    ```bash
@@ -90,9 +91,9 @@ Sous Arch, les paquets sont en général à jour ; `yt-dlp` et `fzf` sont mainte
 
 Sur Fedora, RHEL, CentOS Stream, Rocky, Alma, etc., utilisez `dnf` :
 
-1. Installer Python, pip, fzf et yt-dlp :
+1. Installer Python, pip, fzf, ffmpeg et yt-dlp :
    ```bash
-   sudo dnf install python3 python3-pip fzf yt-dlp
+   sudo dnf install python3 python3-pip fzf ffmpeg yt-dlp
    ```
 2. Installer un lecteur vidéo. **MPV** est souvent dans les dépôts additionnels (RPM Fusion). Si nécessaire, activez RPM Fusion puis installez mpv :
    ```bash
@@ -178,4 +179,47 @@ Après connexion, l’historique AniList est disponible dans le menu (Historique
 ```bash
 anime-sama --help
 ```
+
+---
+
+## Publication sur PyPI
+
+Le dépôt est configuré pour publier automatiquement sur [PyPI](https://pypi.org) via GitHub Actions et **Trusted Publishing** (sans token à stocker dans les secrets).
+
+### 1. Workflow et environnement utilisés
+
+- **Fichier du workflow** : `.github/workflows/publish-to-pypi.yml`
+- **Environnement GitHub** : `pypi` (à créer dans les paramètres du dépôt)
+
+La publication se déclenche à chaque **push d’un tag** de la forme `v*` (ex. `v2.0.0`).
+
+### 2. Créer l’environnement GitHub `pypi`
+
+1. Sur GitHub : **Settings** du dépôt → **Environments**.
+2. Cliquer sur **New environment**, nommer l’environnement exactement : **`pypi`**.
+3. *(Recommandé)* Activer **Required reviewers** : une personne doit approuver chaque déploiement avant publication sur PyPI (évite les publications non voulues).
+
+Sans environnement `pypi`, le job de publication échouera.
+
+### 3. Enregistrer le Trusted Publisher sur PyPI
+
+1. Aller sur [https://pypi.org/manage/account/publishing/](https://pypi.org/manage/account/publishing/).
+2. Dans **Add a new pending publisher** :
+   - **PyPI project name** : `anime-sama-cli` (comme dans `pyproject.toml`).
+   - **Owner** : le propriétaire du dépôt GitHub (user ou org).
+   - **Repository name** : `anime-sama-cli`.
+   - **Workflow name** : `publish-to-pypi.yml` (nom du fichier dans `.github/workflows/`).
+   - **Environment name** : `pypi`.
+3. Enregistrer. Le projet sera créé sur PyPI au premier déploiement réussi.
+
+### 4. Publier une version
+
+Après avoir commit et poussé vos changements :
+
+```bash
+git tag v2.0.0
+git push origin v2.0.0
+```
+
+Le workflow se lance ; si l’environnement `pypi` exige une approbation, un mainteneur doit l’approuver dans l’onglet **Actions**. Une fois le job terminé, le paquet est visible sur https://pypi.org/project/anime-sama-cli/.
 
