@@ -184,4 +184,4 @@ anime-sama --help
 
 ---
 
-Merci à @Sky-NiniKo pour avoir rendu ce projet possible
+Merci à [@Sky-NiniKo](https://github.com/Sky-NiniKo/anime-sama_api) pour avoir rendu ce projet possible
