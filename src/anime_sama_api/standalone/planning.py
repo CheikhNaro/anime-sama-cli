@@ -199,6 +199,9 @@ async def show_planning() -> None:
         if not result:
             return
         _line, _day, entry, info = result[0], result[1], result[2], result[3]
+        # Sélection d'un en-tête de jour (ex. "Lundi (02/03)") : réafficher le planning
+        if entry is None:
+            continue
         _season_label, _available = info or ("Saison 1", False)
         if not _available:
             terminal.clear_screen()
@@ -229,6 +232,10 @@ async def show_planning() -> None:
         entry_url = (getattr(entry, "url", None) or "").strip()
         if not entry_url or "catalogue" not in entry_url:
             return [], 0
+        # URL absolue pour la comparaison avec les saisons du catalogue
+        if not entry_url.startswith("http"):
+            base = constants.SITE_URL.rstrip("/")
+            entry_url = base + ("/" if not entry_url.startswith("/") else "") + entry_url.lstrip("/")
         season_base = _season_base_url(entry_url)
         catalogue = slug_to_catalogue.get(menus.slug_from_planning_url(entry_url))
         if not catalogue and entry.title:
@@ -240,13 +247,20 @@ async def show_planning() -> None:
         if catalogue:
             try:
                 seasons = await catalogue.seasons()
+                # On cherche la saison dont l'URL correspond au début de l'URL du planning
+                # On normalise les URLs pour la comparaison (enlever les tirets et slashs finaux)
+                def _norm_url(u: str) -> str:
+                    return (u or "").rstrip("/").replace("-", "").lower()
+
+                norm_entry_url = _norm_url(entry_url)
                 for s in seasons:
-                    su = (getattr(s, "url", "") or "").rstrip("/") + "/"
-                    if su == season_base or entry_url.startswith(su.rstrip("/")):
+                    su = getattr(s, "url", "") or ""
+                    if norm_entry_url.startswith(_norm_url(su)):
                         episodes = await s.episodes()
                         if episodes:
                             return episodes, len(episodes) - 1
-                        break
+
+                # Si pas de correspondance exacte, on prend la dernière saison du catalogue
                 if seasons:
                     episodes = await seasons[-1].episodes()
                     if episodes:
@@ -263,6 +277,7 @@ async def show_planning() -> None:
             return [], 0
         return episodes, len(episodes) - 1
 
+    print(constants.BLUE + "  Chargement des épisodes..." + constants.RESET)
     episodes, ep_idx = await _load_episodes_for_planning_entry(entry)
 
     while True:

@@ -59,8 +59,8 @@ def first_run_wizard() -> None:
     """Définissez vos préférences de lecteur et langue."""
     terminal.clear_screen()
     terminal.print_ascii_art()
-    print(constants.BOLD + constants.CYAN + "  🎬 ANIME-SAMA CLI" + constants.RESET + " v" + constants.__version__)
-    print(constants.GREEN + "  ─────────────────────────" + constants.RESET)
+    print(constants.BOLD + constants.CYAN + "  🎬 ANIME-SAMA CLI" + constants.RESET)
+    print(constants.GREEN + "  ─────────────────" + constants.RESET)
     print(constants.YELLOW + "  Premier lancement : définissez vos préférences." + constants.RESET)
     print()
     items_player = ["MPV", "VLC"]

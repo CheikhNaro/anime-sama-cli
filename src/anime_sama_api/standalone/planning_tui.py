@@ -66,14 +66,22 @@ def run_planning_tui(
     if not selected or isinstance(selected, list):
         return None
 
+    selected = (selected or "").strip().replace("\r", "")
     rows = line_to_rows.get(selected)
     if not rows:
+        # Correspondance souple (espaces/encoding) : préférer une entrée animé
+        norm = selected.strip().replace("\r", "")
+        for r in lines_and_entries:
+            if (r[0].strip().replace("\r", "") == norm) and (r[2] is not None):
+                return r
+        for r in lines_and_entries:
+            if r[0].strip().replace("\r", "") == norm:
+                return r
         return None
     row = rows[0]
 
-    if row[2] is None:
-        return None
-
+    # Retourner le row même si c'est un en-tête de jour (entry None),
+    # pour que le planning puisse réafficher au lieu de revenir au menu.
     return row
 
 
