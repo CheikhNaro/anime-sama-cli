@@ -17,7 +17,6 @@ from . import terminal
 
 PREVIEW_COVER_WIDTH = 60
 PREVIEW_COVER_HEIGHT = 14
-PREVIEW_HEADER_LINES = PREVIEW_COVER_HEIGHT + 2  # image + ligne vide + séparateur
 
 
 def check_fzf_version() -> bool:
@@ -212,6 +211,9 @@ def run_preview_cover(mapping_path: str, line: str) -> None:
     def sep() -> None:
         buffer.write(sep_line)
 
+    sep()
+    buffer.write(b"\n")  # espace entre la cover et les infos pour une lecture claire
+
     title = (entry.get("title") or entry.get("name") or "").strip()
     genre = (entry.get("genre") or "").strip()
     type_val = (entry.get("type") or "").strip()
@@ -307,7 +309,7 @@ def fzf_select(
                     json.dump(mapping, tf, ensure_ascii=False)
                     map_path = tf.name
                 script_path = constants.PREVIEW_SCRIPT_PATH or os.path.abspath(sys.argv[0])
-                preview_window = f"--preview-window=right:50%:wrap:~{PREVIEW_HEADER_LINES}"
+                preview_window = "--preview-window=right:50%:wrap"
                 cmd.extend([
                     "--preview",
                     f"{shlex.quote(sys.executable)} {shlex.quote(script_path)} --preview-cover {shlex.quote(map_path)} {{}}",

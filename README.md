@@ -19,12 +19,9 @@ Le projet a besoin des éléments suivants pour fonctionner.
 | **MPV** ou **VLC** | Lecture vidéo des épisodes | — |
 | **yt-dlp** | Téléchargement et lecture des flux vidéo | récente |
 | **ffmpeg** | Requis par yt-dlp pour fusionner flux audio/vidéo | — |
+| **chafa** | Affichage des covers (jaquettes) dans le panneau de prévisualisation fzf (sixel/ASCII) | — |
 
-### Dépendance optionnelle
-
-| Dépendance | Rôle |
-|------------|------|
-| **ImageMagick** | Aperçu des jaquettes dans fzf et renforcement de la netteté des images |
+**Terminal pour les covers :** pour que les jaquettes s’affichent correctement, utilisez un terminal qui supporte l’affichage d’images ou le protocole sixel (p. ex. **Kitty**, **iTerm2**, **WezTerm**, **foot**). Avec **chafa**, un aperçu en caractères est possible même dans les terminaux qui ne gèrent pas les images nativement.
 
 ### Dépendances Python (gérées à l’installation)
 
@@ -55,20 +52,20 @@ Sur les distributions basées sur Debian (Ubuntu, Linux Mint, etc.), utilisez `a
    ```bash
    sudo apt update
    ```
-2. Installer Python, pip, fzf, un lecteur vidéo, ffmpeg et yt-dlp :
+2. Installer Python, **pipx** (recommandé pour les applis CLI), fzf, chafa, un lecteur vidéo (MPV ou VLC), ffmpeg et yt-dlp :
    ```bash
-   sudo apt install python3 python3-pip fzf mpv ffmpeg yt-dlp
+   sudo apt install python3 pipx fzf chafa mpv ffmpeg yt-dlp
    ```
    Pour utiliser VLC au lieu de MPV :
    ```bash
    sudo apt install vlc
    ```
-3. *(Optionnel)* ImageMagick pour les aperçus et la netteté des covers :
+3. Activer pipx pour l’utilisateur courant :
    ```bash
-   sudo apt install imagemagick
+   pipx ensurepath
    ```
-
-**Note :** La version de `yt-dlp` dans les dépôts peut être en retard. Pour une version à jour, vous pouvez utiliser pip : `pip install -U yt-dlp` (après avoir installé `python3-pip`).
+   Puis redémarrer le terminal ou exécuter `source ~/.bashrc` (ou `source ~/.zshrc` selon votre shell).
+**Note :** La version de `yt-dlp` dans les dépôts peut être en retard. Pour une version à jour, vous pouvez utiliser pipx : `pipx install yt-dlp`.
 
 ### Arch Linux (et dérivés)
 
@@ -76,65 +73,75 @@ Sur Arch (et dérivés comme Manjaro), utilisez `pacman` :
 
 1. Installer les paquets :
    ```bash
-   sudo pacman -S python python-pip fzf mpv ffmpeg yt-dlp
+   sudo pacman -S python python-pip fzf chafa mpv ffmpeg yt-dlp
    ```
    Pour utiliser VLC au lieu de MPV :
    ```bash
    sudo pacman -S vlc
    ```
-2. *(Optionnel)* ImageMagick :
-   ```bash
-   sudo pacman -S imagemagick
-   ```
-
 Sous Arch, les paquets sont en général à jour ; `yt-dlp` et `fzf` sont maintenus dans les dépôts officiels.
 
 ### Fedora / RHEL (et dérivés)
 
 Sur Fedora, RHEL, CentOS Stream, Rocky, Alma, etc., utilisez `dnf` :
 
-1. Installer Python, pip, fzf, ffmpeg et yt-dlp :
+1. Installer Python, pip, fzf, chafa, ffmpeg et yt-dlp :
    ```bash
-   sudo dnf install python3 python3-pip fzf ffmpeg yt-dlp
+   sudo dnf install python3 python3-pip fzf chafa ffmpeg yt-dlp
    ```
 2. Installer un lecteur vidéo. **MPV** est souvent dans les dépôts additionnels (RPM Fusion). Si nécessaire, activez RPM Fusion puis installez mpv :
    ```bash
    sudo dnf install mpv
    ```
-   Si mpv n’est pas disponible, installez VLC :
+   Si mpv n’est pas disponible, ou si vous préférez VLC :
    ```bash
    sudo dnf install vlc
    ```
-3. *(Optionnel)* ImageMagick :
-   ```bash
-   sudo dnf install ImageMagick
-   ```
-
 Sur RHEL/CentOS, si `yt-dlp` ou `fzf` ne sont pas dans les dépôts par défaut, vous pouvez les installer via pip pour `yt-dlp` (`pip install -U yt-dlp`) et suivre les instructions officielles pour `fzf` si besoin.
 
 ---
 
-## Installation du projet
+## Installation
 
 Une fois les dépendances système installées :
+
+### Debian / Ubuntu (et dérivés) — utiliser pipx uniquement
+
+Sur les systèmes basés sur Debian (Python géré par le système, PEP 668), **n’utilisez pas** `pip install` : l’environnement est « externally managed » et cela provoquera une erreur. Utilisez **pipx** pour installer l’application dans un environnement virtuel dédié.
+
+**Depuis PyPI :**
+```bash
+pipx install anime-sama-cli
+```
+
+**Depuis les sources (dépôt Git) :**
+```bash
+git clone https://github.com/CheikhNaro/anime-sama-cli.git && cd anime-sama-cli
+pipx install -e .
+```
+
+La commande `anime-sama` sera disponible. Si elle n’est pas trouvée, assurez-vous que le répertoire des binaires de pipx est dans votre `PATH` (généralement `~/.local/bin`) en ajoutant cette ligne à votre .zshrc ou .bashrc:
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+Et exécutez `pipx ensurepath` si ce n’est pas déjà fait.
+
+### Autres distributions (Arch, Fedora, etc.)
 
 ```bash
 pip install anime-sama-cli
 ```
 
-La commande `anime-sama` sera disponible. Si nécessaire, ajoutez le répertoire des binaires à votre `PATH` (par exemple `~/.local/bin` pour une installation utilisateur) :
-
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-**Installation depuis les sources (dépôt Git) :**
-
+Ou depuis les sources :
 ```bash
 git clone https://github.com/CheikhNaro/anime-sama-cli.git && cd anime-sama-cli && pip install -e .
 ```
 
-Vous pouvez aussi lancer sans installer : `./anisama-cli` depuis la racine du dépôt (avec les dépendances Python déjà installées).
+Si nécessaire, ajoutez `~/.local/bin` à votre `PATH`.
+
+---
+
+Vous pouvez aussi lancer sans installer : `./anisama-cli` depuis la racine du dépôt (avec les dépendances Python déjà installées dans un venv).
 
 ---
 
@@ -148,7 +155,7 @@ Sans argument, l’outil affiche le menu principal (Regarder, Télécharger, Pla
 anime-sama
 ```
 
-Au premier lancement, le lecteur (MPV ou VLC) et la langue (VF ou VOSTFR) sont demandés puis enregistrés.
+Au premier lancement, vos préférences de lecteur (MPV ou VLC) et de langue (VF ou VOSTFR) sont demandées puis enregistrées.
 
 ### Changer le lecteur vidéo par défaut
 

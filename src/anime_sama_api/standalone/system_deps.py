@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Vérification des dépendances système requises (fzf, ffmpeg, yt-dlp, mpv/vlc)."""
+"""Vérification des dépendances système requises (fzf, chafa, ffmpeg, yt-dlp, mpv/vlc)."""
 
 from __future__ import annotations
 
@@ -36,6 +36,9 @@ def check_system_dependencies() -> list[str]:
     if not fzf_utils.check_fzf_version():
         missing.append("fzf (>= 0.53)")
 
+    if not _command_available("chafa", "--version"):
+        missing.append("chafa (affichage des covers dans la preview fzf)")
+
     if not _command_available("ffmpeg", "-version"):
         missing.append("ffmpeg")
 
@@ -65,9 +68,9 @@ def notify_if_missing() -> None:
         f"{constants.RED}Dépendances système manquantes :{list_str}{constants.RESET}\n\n"
         "Installez-les selon votre distribution Linux, puis relancez la commande.\n"
         "Exemples :\n"
-        "  • Debian/Ubuntu : sudo apt install fzf ffmpeg mpv yt-dlp\n"
-        "  • Fedora/RHEL   : sudo dnf install fzf ffmpeg mpv yt-dlp\n"
-        "  • Arch Linux    : sudo pacman -S fzf ffmpeg mpv yt-dlp\n\n"
+        "  • Debian/Ubuntu : sudo apt install fzf chafa ffmpeg mpv yt-dlp\n"
+        "  • Fedora/RHEL   : sudo dnf install fzf chafa ffmpeg mpv yt-dlp\n"
+        "  • Arch Linux    : sudo pacman -S fzf chafa ffmpeg mpv yt-dlp\n\n"
         "Voir le README du projet pour plus de détails :\n"
         "  https://github.com/CheikhNaro/anime-sama-cli#installation-des-d%C3%A9pendances-syst%C3%A8me"
     )
