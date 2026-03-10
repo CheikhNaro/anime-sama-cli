@@ -184,4 +184,4 @@ anime-sama --help
 
 ---
 
-Merci à @Sky-Niniko pour avoir rendu ce projet possible
+Merci à @Sky-NiniKo pour avoir rendu ce projet possible
