@@ -1,141 +1,180 @@
-# Anime-Sama-cli
+# Anime-Sama-CLI
+
 Regarder ou télécharger vos animés en VF/VOSTFR depuis votre terminal.
 
-## Structure du projet
+---
 
-```
-anime-sama-cli/
-├── src/
-│   └── anime_sama_api/    # Package Python (API + CLI)
-├── tests/                 # Tests unitaires
-├── examples/              # Exemples d’utilisation
-├── scripts/               # Scripts utilitaires (ex. debug)
-├── anisama-cli            # Point d’entrée principal (à lancer ou lier dans ~/.local/bin)
-├── pyproject.toml
-└── README.md
-```
+## Dépendances
 
+Le projet a besoin des éléments suivants pour fonctionner.
 
+### Dépendances système
 
-https://github.com/user-attachments/assets/f10d82de-1a6d-47ea-b43e-a91fd9e10ed3
+| Dépendance | Rôle | Version minimale |
+|------------|------|------------------|
+| **Python** | Exécution de l’application | 3.10+ |
+| **fzf** | Menu de sélection interactif (recherche, choix d’épisodes, etc.) | 0.53 |
+| **MPV** ou **VLC** | Lecture vidéo des épisodes | — |
+| **yt-dlp** | Téléchargement et lecture des flux vidéo | récente |
 
+### Dépendance optionnelle
 
+| Dépendance | Rôle |
+|------------|------|
+| **ImageMagick** | Aperçu des jaquettes dans fzf et renforcement de la netteté des images |
+
+### Dépendances Python (gérées à l’installation)
+
+Elles sont installées automatiquement avec le projet : `httpx`, `platformdirs`, `rich`, `textual`, `tomli` (si Python &lt; 3.11), `yt-dlp`.
 
 ---
 
-## Dépendances requises
+## Fonctionnalités
 
-- **Python 3.10+**
-- **fzf** (≥ 0.53)
-- **MPV** ou **VLC**
-- **yt-dlp** (téléchargements et lecture)
-- *Optionnel* : **ImageMagick** (preview fzf + netteté des covers)
-
-### Qualité des images (covers)
-
-Les images sont redimensionnées puis **renforcées en netteté** (UnsharpMask / `-unsharp`) pour limiter le flou, quel que soit le terminal. Pour aller plus loin, vous pouvez upscaler vous‑même les images du cache avec un outil IA (le résultat sera utilisé au prochain affichage) :
-
-- **Real-ESRGAN** (anime, très bon) : [github.com/xinntao/Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN)
-- **waifu2x** (style anime) : [github.com/nagadomi/waifu2x](https://github.com/nagadomi/waifu2x)
-- **Upscayl** (interface graphique) : [upscayl.org](https://upscayl.org)
-
-Cache des covers : `~/.cache/anime-sama-cli/covers/` (supprimer le dossier pour régénérer après upscale manuel).
-
-### Installation des dépendances
-
-**Debian / Ubuntu (apt)**
-
-```bash
-sudo apt update
-sudo apt install python3 python3-pip fzf mpv yt-dlp
-# ou VLC à la place de mpv :
-# sudo apt install vlc
-```
-
-**Arch (pacman)**
-
-```bash
-sudo pacman -S python python-pip fzf mpv yt-dlp
-# ou vlc
-```
-
-**Fedora / RHEL (dnf)**
-
-```bash
-sudo dnf install python3 python3-pip fzf mpv yt-dlp
-# ou vlc
-```
+- **Regarder** : parcourir le catalogue, choisir un animé et un épisode, lecture dans MPV ou VLC.
+- **Télécharger** : sélection d’épisodes ou de saisons pour téléchargement (via yt-dlp).
+- **Planning** : affichage du planning des sorties de la semaine et lecture depuis le planning.
+- **Historique AniList** : connexion à AniList, import des animés « déjà vus » et « à regarder », consultation et mise à jour depuis l’outil.
+- **Historique local** : consultation de l’historique de visionnage local.
+- **Recherche** : recherche dans le catalogue et dans l’historique.
 
 ---
 
-## Installation
+## Installation des dépendances système
 
-### Via pip (PyPI)
+Installez d’abord les paquets système selon votre distribution, puis installez le projet (voir section suivante).
 
-Une fois le paquet publié sur [PyPI](https://pypi.org/), vous pourrez installer avec :
+### Debian / Ubuntu (et dérivés)
+
+Sur les distributions basées sur Debian (Ubuntu, Linux Mint, etc.), utilisez `apt` :
+
+1. Mettre à jour la liste des paquets :
+   ```bash
+   sudo apt update
+   ```
+2. Installer Python, pip, fzf, un lecteur vidéo et yt-dlp :
+   ```bash
+   sudo apt install python3 python3-pip fzf mpv yt-dlp
+   ```
+   Pour utiliser VLC au lieu de MPV :
+   ```bash
+   sudo apt install vlc
+   ```
+3. *(Optionnel)* ImageMagick pour les aperçus et la netteté des covers :
+   ```bash
+   sudo apt install imagemagick
+   ```
+
+**Note :** La version de `yt-dlp` dans les dépôts peut être en retard. Pour une version à jour, vous pouvez utiliser pip : `pip install -U yt-dlp` (après avoir installé `python3-pip`).
+
+### Arch Linux (et dérivés)
+
+Sur Arch (et dérivés comme Manjaro), utilisez `pacman` :
+
+1. Installer les paquets :
+   ```bash
+   sudo pacman -S python python-pip fzf mpv yt-dlp
+   ```
+   Pour utiliser VLC au lieu de MPV :
+   ```bash
+   sudo pacman -S vlc
+   ```
+2. *(Optionnel)* ImageMagick :
+   ```bash
+   sudo pacman -S imagemagick
+   ```
+
+Sous Arch, les paquets sont en général à jour ; `yt-dlp` et `fzf` sont maintenus dans les dépôts officiels.
+
+### Fedora / RHEL (et dérivés)
+
+Sur Fedora, RHEL, CentOS Stream, Rocky, Alma, etc., utilisez `dnf` :
+
+1. Installer Python, pip, fzf et yt-dlp :
+   ```bash
+   sudo dnf install python3 python3-pip fzf yt-dlp
+   ```
+2. Installer un lecteur vidéo. **MPV** est souvent dans les dépôts additionnels (RPM Fusion). Si nécessaire, activez RPM Fusion puis installez mpv :
+   ```bash
+   sudo dnf install mpv
+   ```
+   Si mpv n’est pas disponible, installez VLC :
+   ```bash
+   sudo dnf install vlc
+   ```
+3. *(Optionnel)* ImageMagick :
+   ```bash
+   sudo dnf install ImageMagick
+   ```
+
+Sur RHEL/CentOS, si `yt-dlp` ou `fzf` ne sont pas dans les dépôts par défaut, vous pouvez les installer via pip pour `yt-dlp` (`pip install -U yt-dlp`) et suivre les instructions officielles pour `fzf` si besoin.
+
+---
+
+## Installation du projet
+
+Une fois les dépendances système installées :
 
 ```bash
 pip install anime-sama-cli
 ```
 
-La commande `anime-sama-cli` sera alors disponible (ajoutez `~/.local/bin` à votre `PATH` si nécessaire).
-
-### Depuis les sources
-
-```bash
-git clone https://github.com/CheikhNaro/anime-sama-cli.git
-cd anime-sama-cli
-pip install -e .
-# Ou pour un lancement direct sans installer :
-./anisama-cli
-```
-
-Ajouter `~/.local/bin` au `PATH` si besoin (dans `~/.bashrc` ou `~/.zshrc`) :
+La commande `anime-sama` sera disponible. Si nécessaire, ajoutez le répertoire des binaires à votre `PATH` (par exemple `~/.local/bin` pour une installation utilisateur) :
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
+**Installation depuis les sources (dépôt Git) :**
+
+```bash
+git clone https://github.com/CheikhNaro/anime-sama-cli.git && cd anime-sama-cli && pip install -e .
+```
+
+Vous pouvez aussi lancer sans installer : `./anisama-cli` depuis la racine du dépôt (avec les dépendances Python déjà installées).
+
 ---
 
 ## Utilisation
 
-**Lancer l’outil**
+### Lancer l’outil (menu principal)
+
+Sans argument, l’outil affiche le menu principal (Regarder, Télécharger, Planning, etc.) :
 
 ```bash
-anime-sama-cli
-# ou (alias fourni par le paquet)
 anime-sama
 ```
 
-Au premier lancement, le script demande le lecteur (MPV ou VLC) et la langue (VF ou VOSTFR), puis affiche le menu principal.
+Au premier lancement, le lecteur (MPV ou VLC) et la langue (VF ou VOSTFR) sont demandés puis enregistrés.
 
-**Changer le lecteur par défaut**
+### Changer le lecteur vidéo par défaut
 
-```bash
-anime-sama-cli --set-player
-```
-
-**Changer la langue par défaut**
+Pour choisir à nouveau entre MPV et VLC :
 
 ```bash
-anime-sama-cli --set-lang
+anime-sama --set-player
 ```
 
-**Aide**
+### Changer la langue par défaut (VF / VOSTFR)
+
+Pour modifier la langue d’affichage des épisodes :
 
 ```bash
-anime-sama-cli --help
+anime-sama --set-lang
 ```
 
----
+### Se connecter à AniList et importer son historique
 
-## Publication sur PyPI (mainteneurs)
+Pour lier un compte AniList et importer les listes « déjà vus » et « à regarder » :
 
-Pour publier une nouvelle version sur [PyPI](https://pypi.org/) :
+```bash
+anime-sama anilist login
+```
 
-1. Installer les outils : `pip install build twine`
-2. Incrémenter la version dans `pyproject.toml` (champ `version`)
-3. Builder : `python -m build`
-4. Vérifier : `twine check dist/*`
-5. Publier : `twine upload dist/*` (ou utiliser GitHub Actions avec un secret `PYPI_API_TOKEN`)
+Après connexion, l’historique AniList est disponible dans le menu (Historique AniList, Mise à jour AniList).
+
+### Aide
+
+```bash
+anime-sama --help
+```
