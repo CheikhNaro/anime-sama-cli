@@ -2,6 +2,8 @@
 
 Regarder ou télécharger vos animés en VF/VOSTFR depuis votre terminal.
 
+https://github.com/user-attachments/assets/d04bddbd-4b20-4d63-a650-5b4a6add65da
+
 ---
 
 ## Dépendances
