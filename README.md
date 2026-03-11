@@ -6,7 +6,11 @@ https://github.com/user-attachments/assets/d04bddbd-4b20-4d63-a650-5b4a6add65da
 
 ---
 
-## Dépendances requises
+## Dépendances
+
+Le projet a besoin des éléments suivants pour fonctionner.
+
+### Dépendances système
 
 | Dépendance | Rôle | Version minimale |
 |------------|------|------------------|
@@ -17,11 +21,11 @@ https://github.com/user-attachments/assets/d04bddbd-4b20-4d63-a650-5b4a6add65da
 | **ffmpeg** | Requis par yt-dlp pour fusionner flux audio/vidéo | — |
 | **chafa** | Affichage des covers (jaquettes) dans le panneau de prévisualisation fzf (sixel/ASCII) | — |
 
-**Terminal pour les covers :** Afin que les covers s’affichent correctement, utilisez un terminal qui supporte l’affichage d’images ou le protocole sixel (p. ex. **Kitty**, **iTerm2**, **WezTerm**, **foot**). Avec **chafa**, un aperçu en caractères est possible même dans les terminaux qui ne gèrent pas les images nativement.
+**Terminal pour les covers :** pour que les jaquettes s’affichent correctement, utilisez un terminal qui supporte l’affichage d’images ou le protocole sixel (p. ex. **Kitty**, **iTerm2**, **WezTerm**, **foot**). Avec **chafa**, un aperçu en caractères est possible même dans les terminaux qui ne gèrent pas les images nativement.
 
 ### Dépendances Python (gérées à l’installation)
 
-Elles sont installées automatiquement : `httpx`, `platformdirs`, `rich`, `textual`, `tomli` (si Python &lt; 3.11), `yt-dlp`.
+Elles sont installées automatiquement avec le projet : `httpx`, `platformdirs`, `rich`, `textual`, `tomli` (si Python &lt; 3.11), `yt-dlp`.
 
 ---
 
@@ -61,7 +65,6 @@ Sur les distributions basées sur Debian (Ubuntu, Linux Mint, etc.), utilisez `a
    pipx ensurepath
    ```
    Puis redémarrer le terminal ou exécuter `source ~/.bashrc` (ou `source ~/.zshrc` selon votre shell).
-
 **Note :** La version de `yt-dlp` dans les dépôts peut être en retard. Pour une version à jour, vous pouvez utiliser pipx : `pipx install yt-dlp`.
 
 ### Arch Linux (et dérivés)
@@ -90,7 +93,7 @@ Sur Fedora, RHEL, CentOS Stream, Rocky, Alma, etc., utilisez `dnf` :
    ```bash
    sudo dnf install mpv
    ```
-   Si vous préférez VLC :
+   Si mpv n’est pas disponible, ou si vous préférez VLC :
    ```bash
    sudo dnf install vlc
    ```
@@ -136,6 +139,31 @@ git clone https://github.com/CheikhNaro/anime-sama-cli.git && cd anime-sama-cli 
 
 Si nécessaire, ajoutez `~/.local/bin` à votre `PATH`.
 
+### Désinstaller l’outil
+
+**Désinstallation du programme :**
+
+- Si vous avez installé avec **pipx** (recommandé) :
+  ```bash
+  pipx uninstall anime-sama-cli
+  ```
+- Si vous avez installé avec **pip** :
+  ```bash
+  pip uninstall anime-sama-cli
+  ```
+
+Cela retire le paquet et les commandes `anime-sama` / `anime-sama-cli`. **Les dossiers de configuration et de cache ne sont pas supprimés.**
+
+**Supprimer aussi la config et le cache (optionnel) :**
+
+Pour tout effacer (préférences, historique, cache des jaquettes) :
+
+```bash
+rm -rf ~/.config/anime-sama_api ~/.config/anime-sama-cli ~/.cache/anime-sama-cli
+```
+
+(`~` désigne votre répertoire utilisateur ; inutile de remplacer par `$USER`, la commande fonctionne pour tout utilisateur.)
+
 ---
 
 Vous pouvez aussi lancer sans installer : `./anisama-cli` depuis la racine du dépôt (avec les dépendances Python déjà installées dans un venv).
@@ -169,8 +197,6 @@ Pour modifier la langue d’affichage des épisodes :
 ```bash
 anime-sama --set-lang
 ```
-
-**Comportement avec VLC :** à chaque épisode, une nouvelle fenêtre VLC s’ouvre. Quand vous la fermez, VLC se ferme totalement (pas de minimisation en arrière-plan ni dans la zone de notification). Le script affiche alors le menu « Que faire maintenant ? » ; si vous choisissez un autre épisode, VLC s’ouvre à nouveau pour le lire.
 
 ### Se connecter à AniList et importer son historique
 
