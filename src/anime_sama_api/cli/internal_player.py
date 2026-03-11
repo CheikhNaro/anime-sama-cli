@@ -34,7 +34,12 @@ def play_episode(
         print("[red]No player available")
         return None
 
-    player_command = config.internal_player_command + [best]
+    player_command = list(config.internal_player_command) + [best]
+    # VLC : une instance par épisode ; fermeture de la fenêtre = VLC quitte complètement (pas de tray).
+    if player_command and "vlc" in player_command[0].lower():
+        for opt in ("--no-one-instance", "--no-qt-system-tray"):
+            if opt not in player_command:
+                player_command.insert(1, opt)
     if args is not None:
         player_command += args
 

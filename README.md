@@ -170,6 +170,8 @@ Pour modifier la langue d’affichage des épisodes :
 anime-sama --set-lang
 ```
 
+**Comportement avec VLC :** à chaque épisode, une nouvelle fenêtre VLC s’ouvre. Quand vous la fermez, VLC se ferme totalement (pas de minimisation en arrière-plan ni dans la zone de notification). Le script affiche alors le menu « Que faire maintenant ? » ; si vous choisissez un autre épisode, VLC s’ouvre à nouveau pour le lire.
+
 ### Se connecter à AniList et importer son historique
 
 Pour lier un compte AniList et importer les listes « déjà vus » et « à regarder » :

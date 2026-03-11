@@ -41,8 +41,11 @@ def play_episode_url(url: str, player: str) -> subprocess.Popen | None:
         if play_url == url and ("vidmoly" in url or "sibnet" in url or "embed" in url.lower()):
             cmd.insert(-1, "--ytdl-format=best")
     else:
+        # --no-one-instance : une nouvelle instance VLC à chaque épisode (pas d'ajout à une fenêtre existante).
+        # --no-qt-system-tray : à la fermeture de la fenêtre, VLC quitte complètement (pas de minimisation en tray).
+        # Ainsi : fermer VLC → processus terminé → le script affiche le menu → choix d'un autre épisode → VLC se rouvre.
         cmd = [
-            "vlc", play_url, "--fullscreen",
+            "vlc", play_url, "--fullscreen", "--no-one-instance", "--no-qt-system-tray",
             f"--http-referrer={referer}",
             f"--http-user-agent={ua}",
         ]
