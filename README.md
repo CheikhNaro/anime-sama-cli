@@ -31,6 +31,8 @@ Elles sont installées automatiquement avec le projet : `httpx`, `platformdirs`,
 
 ## Fonctionnalités
 
+<details><summary><b>Voir les fonctionnalités</b></summary>
+
 - **Regarder** : parcourir le catalogue, choisir un animé et un épisode, lecture dans MPV ou VLC.
 - **Télécharger** : sélection d’épisodes ou de saisons pour téléchargement (via yt-dlp).
 - **Planning** : affichage du planning des sorties de la semaine et lecture depuis le planning.
@@ -38,13 +40,15 @@ Elles sont installées automatiquement avec le projet : `httpx`, `platformdirs`,
 - **Historique local** : consultation de l’historique de visionnage local.
 - **Recherche** : recherche dans le catalogue et dans l’historique.
 
+</details>
+
 ---
 
 ## Installation des dépendances système
 
 Installez d’abord les paquets système selon votre distribution, puis installez le projet (voir section suivante).
 
-### Debian / Ubuntu (et dérivés)
+<details><summary><b>Debian / Ubuntu (et dérivés)</b></summary>
 
 Sur les distributions basées sur Debian (Ubuntu, Linux Mint, etc.), utilisez `apt` :
 
@@ -65,9 +69,12 @@ Sur les distributions basées sur Debian (Ubuntu, Linux Mint, etc.), utilisez `a
    pipx ensurepath
    ```
    Puis redémarrer le terminal ou exécuter `source ~/.bashrc` (ou `source ~/.zshrc` selon votre shell).
+
 **Note :** La version de `yt-dlp` dans les dépôts peut être en retard. Pour une version à jour, vous pouvez utiliser pipx : `pipx install yt-dlp`.
 
-### Arch Linux (et dérivés)
+</details>
+
+<details><summary><b>Arch Linux (et dérivés)</b></summary>
 
 Sur Arch (et dérivés comme Manjaro), utilisez `pacman` :
 
@@ -79,9 +86,12 @@ Sur Arch (et dérivés comme Manjaro), utilisez `pacman` :
    ```bash
    sudo pacman -S vlc
    ```
+
 Sous Arch, les paquets sont en général à jour ; `yt-dlp` et `fzf` sont maintenus dans les dépôts officiels.
 
-### Fedora / RHEL (et dérivés)
+</details>
+
+<details><summary><b>Fedora / RHEL (et dérivés)</b></summary>
 
 Sur Fedora, RHEL, CentOS Stream, Rocky, Alma, etc., utilisez `dnf` :
 
@@ -97,7 +107,10 @@ Sur Fedora, RHEL, CentOS Stream, Rocky, Alma, etc., utilisez `dnf` :
    ```bash
    sudo dnf install vlc
    ```
+
 Sur RHEL/CentOS, si `yt-dlp` ou `fzf` ne sont pas dans les dépôts par défaut, vous pouvez les installer via pip pour `yt-dlp` (`pip install -U yt-dlp`) et suivre les instructions officielles pour `fzf` si besoin.
+
+</details>
 
 ---
 
