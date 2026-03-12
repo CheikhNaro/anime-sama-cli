@@ -118,9 +118,9 @@ Sur RHEL/CentOS, si `yt-dlp` ou `fzf` ne sont pas dans les dépôts par défaut,
 
 Une fois les dépendances système installées :
 
-<details><summary><b>Debian / Ubuntu (et dérivés) — utiliser pipx uniquement</b></summary>
+<details><summary><b>Debian / Ubuntu (et dérivés)</b></summary>
 
-Sur les systèmes basés sur Debian (Python géré par le système, PEP 668), **n’utilisez pas** `pip install` : l’environnement est « externally managed » et cela provoquera une erreur. Utilisez **pipx** pour installer l’application dans un environnement virtuel dédié.
+Sur les systèmes basés sur Debian (Python géré par le système, PEP 668), **n’utilisez pas** `pip install`. Utilisez **pipx** pour installer l’application dans un environnement virtuel dédié.
 
 **Depuis PyPI :**
 ```bash
@@ -141,7 +141,7 @@ Et exécutez `pipx ensurepath` si ce n’est pas déjà fait.
 
 </details>
 
-<details><summary><b>Autres distributions (Arch, Fedora, etc.)</b></summary>
+<details><summary><b>Autres distributions (Arch, Fedora, ...)</b></summary>
 
 ```bash
 pip install anime-sama-cli
@@ -187,7 +187,7 @@ Vous pouvez aussi lancer sans installer : `./anisama-cli` depuis la racine du d�
 
 ---
 
-## Utilisation
+##<details><summary><b>Utilisation</b></summary>
 
 ### Lancer l’outil (menu principal)
 
@@ -230,6 +230,8 @@ Après connexion, l’historique AniList est disponible dans le menu (Historique
 ```bash
 anime-sama --help
 ```
+
+</details>
 
 ---
 
