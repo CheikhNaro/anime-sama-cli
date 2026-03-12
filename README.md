@@ -118,7 +118,7 @@ Sur RHEL/CentOS, si `yt-dlp` ou `fzf` ne sont pas dans les dépôts par défaut,
 
 Une fois les dépendances système installées :
 
-### Debian / Ubuntu (et dérivés) — utiliser pipx uniquement
+<details><summary><b>Debian / Ubuntu (et dérivés) — utiliser pipx uniquement</b></summary>
 
 Sur les systèmes basés sur Debian (Python géré par le système, PEP 668), **n’utilisez pas** `pip install` : l’environnement est « externally managed » et cela provoquera une erreur. Utilisez **pipx** pour installer l’application dans un environnement virtuel dédié.
 
@@ -139,7 +139,9 @@ export PATH="$HOME/.local/bin:$PATH"
 ```
 Et exécutez `pipx ensurepath` si ce n’est pas déjà fait.
 
-### Autres distributions (Arch, Fedora, etc.)
+</details>
+
+<details><summary><b>Autres distributions (Arch, Fedora, etc.)</b></summary>
 
 ```bash
 pip install anime-sama-cli
@@ -151,6 +153,8 @@ git clone https://github.com/CheikhNaro/anime-sama-cli.git && cd anime-sama-cli 
 ```
 
 Si nécessaire, ajoutez `~/.local/bin` à votre `PATH`.
+
+</details>
 
 ### Désinstaller l’outil
 
