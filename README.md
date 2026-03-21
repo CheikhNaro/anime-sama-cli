@@ -173,13 +173,11 @@ Cela retire le paquet et les commandes `anime-sama` / `anime-sama-cli`. **Les do
 
 **Supprimer aussi la config et le cache (optionnel) :**
 
-Pour tout effacer (préférences, historique, cache des jaquettes) :
+Pour tout effacer (préférences, historique, cache des covers) :
 
 ```bash
 rm -rf ~/.config/anime-sama_api ~/.config/anime-sama-cli ~/.cache/anime-sama-cli
 ```
-
-(`~` désigne votre répertoire utilisateur ; inutile de remplacer par `$USER`, la commande fonctionne pour tout utilisateur.)
 
 ---
 
