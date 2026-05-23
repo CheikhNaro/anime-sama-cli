@@ -185,7 +185,7 @@ async def run_watch_flow(cfg: dict[str, str]) -> bool:
                         proc.wait()
                     else:
                         print(constants.RED + "Impossible de lancer l'épisode suivant." + constants.RESET)
-                    break
+                    continue
                 elif after == "précédent":
                     idx_ep -= 1
                     selected_episode = episodes[idx_ep]
@@ -202,7 +202,7 @@ async def run_watch_flow(cfg: dict[str, str]) -> bool:
                         proc.wait()
                     else:
                         print(constants.RED + "Impossible de lancer l'épisode précédent." + constants.RESET)
-                    break
+                    continue
                 elif after == "saison_suivante":
                     if not has_next_season:
                         break
