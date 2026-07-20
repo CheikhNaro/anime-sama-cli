@@ -78,21 +78,27 @@ def _fetch_page_info(page_url: str) -> dict[str, str]:
             html = resp.read().decode("utf-8", errors="replace")
     except Exception:
         return result
-    for synopsis_m in re.finditer(r"Synopsis[\W\w]+?>(.+?)<", html):
+    synopsis_m = re.search(
+        r'<h2[^>]*>Synopsis</h2>[\s\S]*?<p[^>]*id="synopsisText"[^>]*>(.+?)</p>',
+        html,
+        re.IGNORECASE,
+    )
+    if synopsis_m:
         raw = html_module.unescape(synopsis_m.group(1).strip())
-        if raw and raw != "Synopsis" and len(raw) > 15:
-            result["synopsis"] = raw
-            break
-    if not result["synopsis"]:
-        synopsis_after = re.search(r"Synopsis\s*</[^>]+>\s*<[^>]+>(.+?)</[^>]+>", html, re.DOTALL)
-        if synopsis_after:
-            result["synopsis"] = html_module.unescape(synopsis_after.group(1).strip())
-    genres_m = re.search(r"Genres[\W\w]+?>(.+?)<", html)
-    if genres_m:
-        result["genre"] = html_module.unescape(genres_m.group(1).strip())
-    type_m = re.search(r"Types?[\W\w]+?>(.+?)<", html, re.IGNORECASE)
+        result["synopsis"] = raw
+    genre_m = re.search(
+        r'<h2[^>]*>Genres</h2>\s*<div[^>]*class="genres-wrap"[^>]*>([\s\S]+?)</div>',
+        html,
+        re.IGNORECASE,
+    )
+    if genre_m:
+        genres = re.findall(r'genre-pill[^>]*>([^<]+)', genre_m.group(1))
+        result["genre"] = ", ".join(
+            html_module.unescape(g.strip()) for g in genres if g.strip()
+        )
+    type_m = re.search(r'<h2[^>]*>(Anime|Scans|Manga|Film)</h2>', html, re.IGNORECASE)
     if type_m:
-        result["type"] = html_module.unescape(type_m.group(1).strip())
+        result["type"] = type_m.group(1)
     return result
 
 

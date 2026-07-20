@@ -11,7 +11,6 @@ from httpx import AsyncClient
 from .catalogue import Catalogue, Category
 from .episode import Episode
 from .langs import Lang, flags
-from .season import Season
 from .utils import filter_literal, is_Literal
 
 logger = logging.getLogger(__name__)
@@ -105,31 +104,81 @@ class AnimeSama:
 
     def _yield_catalogues_from(self, html: str) -> Generator[Catalogue]:
         text_without_script = re.sub(r"<script[\W\w]+?</script>", "", html)
-        for match in re.finditer(
-            rf"href=\"({self.site_url}catalogue/.+)\"[\W\w]+?src=\"(.+?)\"[\W\w]+?<h2.+?>(.*)\n?<[\W\w]+?<p.+?>(.*)\n?<[\W\w]+?<p.+?>(.*)\n?<[\W\w]+?<p.+?>(.*)\n?<[\W\w]+?<p.+?>(.*)\n?<",
+        for card_match in re.finditer(
+            r'<div[^>]*class="[^"]*catalog-card[^"]*"[^>]*>[\s\S]*?</a>\s*</div>',
             text_without_script,
+            re.IGNORECASE,
         ):
-            (
-                url,
-                image_url,
-                name,
-                alternative_names_str,
-                genres_str,
-                categories_str,
-                languages_str,
-            ) = (unescape(item) for item in match.groups())
+            card_html = card_match.group()
 
-            alternative_names = (
-                alternative_names_str.split(", ") if alternative_names_str else []
+            url_m = re.search(r'href="([^"]+)"', card_html)
+            if not url_m:
+                continue
+            url = unescape(url_m.group(1))
+
+            image_m = re.search(r'src="([^"]+)"', card_html)
+            image_url = unescape(image_m.group(1)) if image_m else ""
+
+            name_m = re.search(r'card-title[^>]*>(.*?)</h2>', card_html, re.IGNORECASE)
+            name = unescape(name_m.group(1).strip()) if name_m else ""
+
+            alt_m = re.search(
+                r'alternate-titles[^>]*>(.*?)</p>', card_html, re.IGNORECASE
             )
-            if " - " in genres_str:
-                genres = genres_str.split(" - ")
-            else:
-                genres = genres_str.split(", ") if genres_str else []
-            categories = categories_str.split(", ") if categories_str else []
-            languages = languages_str.split(", ") if languages_str else []
+            alt_names_raw = unescape(alt_m.group(1)) if alt_m else ""
+            alternative_names = (
+                [a.strip() for a in alt_names_raw.split(",") if a.strip()]
+                if alt_names_raw
+                else []
+            )
 
-            # Normaliser les variantes du site (anime-sama utilise parfois des libellés incorrects)
+            genres: list[str] = []
+            genre_rows = re.findall(
+                r'<div class="info-row">[\s\S]*?</div>\s*</div>', card_html
+            )
+            for row in genre_rows:
+                label_m = re.search(
+                    r'info-label[^>]*>[\s\S]*?Genres[\s\S]*?</span>', row, re.IGNORECASE
+                )
+                if label_m:
+                    genres = [
+                        unescape(t.strip())
+                        for t in re.findall(
+                            r'genre-tag[^>]*>([^<]+)', row
+                        )
+                        if t.strip()
+                    ]
+                    break
+
+            categories: list[str] = []
+            for row in genre_rows:
+                label_m = re.search(
+                    r'info-label[^>]*>[\s\S]*?Types?[\s\S]*?</span>',
+                    row,
+                    re.IGNORECASE,
+                )
+                if label_m:
+                    type_vals = re.findall(r'info-value[^>]*>([^<]+)', row)
+                    for val in type_vals:
+                        parts = [v.strip() for v in val.split(",") if v.strip()]
+                        categories.extend(parts)
+                    break
+
+            languages: list[str] = []
+            for row in genre_rows:
+                label_m = re.search(
+                    r'info-label[^>]*>[\s\S]*?Langues[\s\S]*?</span>',
+                    row,
+                    re.IGNORECASE,
+                )
+                if label_m:
+                    flag_titles = re.findall(r'lang-flag[^>]*title="([^"]+)"', row)
+                    for title in flag_titles:
+                        lang = self._flag_title_to_lang(title)
+                        if lang:
+                            languages.append(lang)
+                    break
+
             _category_fix = {"Autre": "Autres", "Animes": "Anime", "Films": "Film"}
             categories = [_category_fix.get(c.strip(), c.strip()) for c in categories if c.strip()]
 
@@ -141,7 +190,6 @@ class AnimeSama:
             categories_checked = cast(
                 set[Category], set(filter_literal(categories, Category, not_in_literal))
             )
-            # Ne pas logger pour les langues : le site peut mettre "Scans" dans les langues (ex. Watamote)
             languages_checked = cast(
                 set[Lang], set(filter_literal(languages, Lang, lambda _: None))
             )
@@ -157,23 +205,49 @@ class AnimeSama:
                 client=self.client,
             )
 
+    @staticmethod
+    def _flag_title_to_lang(title: str) -> str | None:
+        from .langs import flagid2lang
+        return flagid2lang.get(title.strip().lower())
+
     def _yield_release_episodes_from(self, html: str) -> Generator[EpisodeRelease]:
-        for match in re.finditer(
-            rf"href=\"({self.site_url}catalogue/.+)\"[\W\w]+?src=\"(.+?)\"[\W\w]+?>(.*)\n?<[\W\w]+?>(.*)\n?<[\W\w]+?>(.*)\n?<[\W\w]+?>(.*)\n?<",
+        for card_match in re.finditer(
+            r'<div[^>]*class="[^"]*anime-card-premium[^"]*"[^>]*>[\s\S]*?</a>\s*</div>',
             html,
+            re.IGNORECASE,
         ):
-            (
-                season_url,
-                image_url,
-                serie_name,
-                categories,
-                language,
-                descriptive,
-            ) = match.groups()
-            categories = categories.split(", ") if categories else ["Anime"]
+            card_html = card_match.group()
+            url_m = re.search(r'href="([^"]+)"', card_html)
+            if not url_m:
+                continue
+            season_url = unescape(url_m.group(1))
+
+            image_m = re.search(r'src="([^"]+)"', card_html)
+            image_url = unescape(image_m.group(1)) if image_m else ""
+
+            alt_m = re.search(r'alt="([^"]*)"', card_html)
+            serie_name = unescape(alt_m.group(1).strip()) if alt_m else ""
+
+            badge_m = re.search(
+                r'badge-text[^>]*>([^<]+)', card_html, re.IGNORECASE
+            )
+            category_raw = unescape(badge_m.group(1).strip()) if badge_m else "Anime"
+
+            lang_m = re.search(
+                r'language-badge-top[\s\S]*?badge-text[^>]*>([^<]+)',
+                card_html,
+                re.IGNORECASE,
+            )
+            language = unescape(lang_m.group(1).strip()) if lang_m else "VOSTFR"
+
+            info_m = re.search(
+                r'info-text[^>]*>([^<]+)', card_html, re.IGNORECASE
+            )
+            descriptive = unescape(info_m.group(1).strip()) if info_m else ""
+
+            categories = [category_raw]
             _category_fix = {"Autre": "Autres", "Animes": "Anime", "Films": "Film"}
             categories = [_category_fix.get(c.strip(), c.strip()) for c in categories if c.strip()]
-            language = language.strip() if language else "VOSTFR"
 
             def not_in_literal(value: Any) -> None:
                 logger.warning(

@@ -85,32 +85,51 @@ class Catalogue:
         return seasons
 
     async def advancement(self) -> str:
-        search = cast(list[str], re.findall(r"Actualité.+?>(.+?)<", await self.page()))
-
+        page = await self.page()
+        search = cast(
+            list[str],
+            re.findall(r"Actualité[\s\S]*?info-val[^>]*>([^<]+)", page),
+        )
+        if not search:
+            search = cast(
+                list[str], re.findall(r"Actualité.+?>(.+?)<", page)
+            )
         if not search:
             return ""
-
         return search[0]
 
     async def correspondence(self) -> str:
+        page = await self.page()
         search = cast(
-            list[str], re.findall(r"Correspondance.+?>(.+?)<", await self.page())
+            list[str],
+            re.findall(r"Correspondance[\s\S]*?info-val[^>]*>([^<]+)", page),
         )
-
+        if not search:
+            search = cast(
+                list[str], re.findall(r"Correspondance.+?>(.+?)<", page)
+            )
         if not search:
             return ""
-
         return search[0]
 
     async def synopsis(self) -> str:
+        page = await self.page()
         search = cast(
-            list[str], re.findall(r"Synopsis[\W\w]+?>(.+)<", await self.page())
+            list[str],
+            re.findall(
+                r'<h2[^>]*>Synopsis</h2>[\s\S]*?<p[^>]*id="synopsisText"[^>]*>(.+?)</p>',
+                page,
+                re.IGNORECASE,
+            ),
         )
-
+        if not search:
+            search = cast(
+                list[str], re.findall(r"Synopsis[\W\w]+?>(.+)<", page)
+            )
         if not search:
             return ""
-
-        return search[0]
+        from html import unescape as html_unescape
+        return html_unescape(search[0].strip())
 
     async def is_mature(self) -> bool:
         """Return True if the catalogue contain a warning about adult content"""

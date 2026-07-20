@@ -7,7 +7,7 @@ packages = ["src/anime_sama_api"]
 
 [project]
 name = "anime-sama-cli"
-version = "1.0.2"
+version = "2.0.0"
 description = "Regarder ou télécharger des animés en VF/VOSTFR depuis le terminal (anime-sama.to)"
 readme = "README.md"
 license = "GPL-3.0-or-later"
