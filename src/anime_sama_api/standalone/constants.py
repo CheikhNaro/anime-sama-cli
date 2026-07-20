@@ -32,7 +32,7 @@ ANIME_SAMA_API_CONFIG_DIR = Path(
 ) / "anime-sama_api"
 ANIME_SAMA_API_CONFIG_FILE = ANIME_SAMA_API_CONFIG_DIR / "config.toml"
 DOWNLOADS_DIR_NAME = "Téléchargements"
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 
 FZF_MIN_VERSION = (0, 53, 0)
 COVER_CACHE_DIR = Path(
