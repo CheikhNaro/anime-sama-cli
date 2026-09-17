@@ -3,6 +3,7 @@ from collections.abc import Sequence
 from typing import Any, Literal, cast
 
 from httpx import AsyncClient
+from scrapling.parser import Selector
 
 from .langs import Lang, flags
 from .season import Season
@@ -63,12 +64,22 @@ class Catalogue:
         return self._page
 
     async def seasons(self) -> list[Season]:
-        page_without_comments = remove_some_js_comments(string=await self.page())
+        html = await self.page()
+        page = Selector(content=html)
+
+        # Les données de saisons sont dans des balises <script> sous forme d'appels JS :
+        # panneauAnime("Saison 1", "saison1/vostfr");
+        # On extrait le contenu de tous les scripts puis on applique la regex JS.
+        scripts_text = " ".join(
+            script.text.clean() if script.text else ""
+            for script in page.css("script")
+        )
+        scripts_without_comments = remove_some_js_comments(scripts_text)
 
         # Insensible à la casse pour VOSTFR/Vf (ex. Berserk, pages avec VOSTFR en majuscules)
         seasons = re.findall(
             r'panneauAnime\("(.+?)", *"(.+?)(?:vostfr|vf)"\);',
-            page_without_comments,
+            scripts_without_comments,
             re.IGNORECASE,
         )
 
@@ -85,60 +96,79 @@ class Catalogue:
         return seasons
 
     async def advancement(self) -> str:
-        page = await self.page()
-        search = cast(
-            list[str],
-            re.findall(r"Actualité[\s\S]*?info-val[^>]*>([^<]+)", page),
-        )
-        if not search:
-            search = cast(
-                list[str], re.findall(r"Actualité.+?>(.+?)<", page)
-            )
-        if not search:
-            return ""
-        return search[0]
+        html = await self.page()
+        page = Selector(content=html)
+
+        # Chercher la section "Actualité" dans les info-rows
+        for row in page.css(".info-row"):
+            label_el = row.css(".info-label")
+            if not label_el:
+                continue
+            label_text = label_el[0].text.clean() if label_el[0].text else ""
+            if "Actualit" in label_text:
+                val_el = row.css(".info-val")
+                if val_el and val_el[0].text:
+                    return val_el[0].text.clean()
+                # Fallback : tout le texte de la row hors label
+                val_el2 = row.css("[class*='info-val']")
+                if val_el2 and val_el2[0].text:
+                    return val_el2[0].text.clean()
+
+        return ""
 
     async def correspondence(self) -> str:
-        page = await self.page()
-        search = cast(
-            list[str],
-            re.findall(r"Correspondance[\s\S]*?info-val[^>]*>([^<]+)", page),
-        )
-        if not search:
-            search = cast(
-                list[str], re.findall(r"Correspondance.+?>(.+?)<", page)
-            )
-        if not search:
-            return ""
-        return search[0]
+        html = await self.page()
+        page = Selector(content=html)
+
+        # Chercher la section "Correspondance" dans les info-rows
+        for row in page.css(".info-row"):
+            label_el = row.css(".info-label")
+            if not label_el:
+                continue
+            label_text = label_el[0].text.clean() if label_el[0].text else ""
+            if "Correspondance" in label_text:
+                val_el = row.css(".info-val")
+                if val_el and val_el[0].text:
+                    return val_el[0].text.clean()
+                val_el2 = row.css("[class*='info-val']")
+                if val_el2 and val_el2[0].text:
+                    return val_el2[0].text.clean()
+
+        return ""
 
     async def synopsis(self) -> str:
-        page = await self.page()
-        search = cast(
-            list[str],
-            re.findall(
-                r'<h2[^>]*>Synopsis</h2>[\s\S]*?<p[^>]*id="synopsisText"[^>]*>(.+?)</p>',
-                page,
-                re.IGNORECASE,
-            ),
-        )
-        if not search:
-            search = cast(
-                list[str], re.findall(r"Synopsis[\W\w]+?>(.+)<", page)
-            )
-        if not search:
-            return ""
-        from html import unescape as html_unescape
-        return html_unescape(search[0].strip())
+        html = await self.page()
+        page = Selector(content=html)
+
+        # Synopsis dans l'élément #synopsisText
+        synopsis_el = page.css("#synopsisText")
+        if synopsis_el and synopsis_el[0].text:
+            return synopsis_el[0].text.clean()
+
+        # Fallback : chercher le paragraphe après le h2 Synopsis
+        h2_list = page.find_all("h2", re.compile(r"Synopsis", re.IGNORECASE))
+        if h2_list:
+            # Chercher le premier <p> frère ou descendant suivant
+            parent = h2_list[0].parent
+            if parent:
+                p_els = parent.css("p")
+                if p_els and p_els[0].text:
+                    return p_els[0].text.clean()
+
+        return ""
 
     async def is_mature(self) -> bool:
         """Return True if the catalogue contain a warning about adult content"""
-        return (
-            re.search(
-                r'<div class=".*?yellow.*?">[\W\w]+?public averti', await self.page()
-            )
-            is not None
-        )
+        html = await self.page()
+        page = Selector(content=html)
+
+        # Chercher une div avec classe contenant "yellow" et le texte "public averti"
+        for div in page.css("div[class*='yellow']"):
+            text = div.text.clean() if div.text else ""
+            if "public averti" in text.lower():
+                return True
+
+        return False
 
     @property
     def is_anime(self) -> bool:

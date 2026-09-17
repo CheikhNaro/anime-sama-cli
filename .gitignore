@@ -15,3 +15,6 @@ wheels/
 
 # IDE
 .vscode
+
+# Dépendances locales (workspace uv)
+Scrapling/

@@ -3,10 +3,10 @@ import logging
 import re
 from collections.abc import AsyncIterator, Generator
 from dataclasses import dataclass
-from html import unescape
 from typing import Any, cast
 
 from httpx import AsyncClient
+from scrapling.parser import Selector
 
 from .catalogue import Catalogue, Category
 from .episode import Episode
@@ -26,20 +26,24 @@ async def find_site_url(
     if response.is_error:
         return None
 
-    # * Sometimes need to check for the great word "anime-sama" in lowercase or uppercase but if add re.IGNORECASE it will work
-    match = re.search(
-        r"href=\"(.+?)\">Accéder à Anime-Sama", response.text, re.IGNORECASE
+    page = Selector(content=response.text, url=provider_url)
+
+    # * Sometimes need to check for the great word "anime-sama" in lowercase or uppercase
+    link = page.find("a", re.compile(r"Accéder à Anime-Sama", re.IGNORECASE))
+    if link is None:
+        return None
+
+    href = link.attrib.get("href", "")
+    if not href:
+        return None
+
+    # * Ajouter un suivi de redirection d'url au match au cas où le site n'est pas à jour
+    redirected = await client.get(href, follow_redirects=False)
+    return (
+        redirected.headers["location"] + "/"
+        if redirected.has_redirect_location
+        else href
     )
-
-    # * Ajouter un suive de redirection d'url au match au cas ou le site n'est pas a jour et redirige vers une autre url, puis garder l'url finale
-
-    if match:
-        redirected = await client.get(match.group(1), follow_redirects=False)
-        return (
-            redirected.headers["location"] + "/"
-            if redirected.has_redirect_location
-            else match.group(1)
-        )
 
 
 @dataclass(frozen=True)
@@ -103,81 +107,62 @@ class AnimeSama:
         return ""
 
     def _yield_catalogues_from(self, html: str) -> Generator[Catalogue]:
-        text_without_script = re.sub(r"<script[\W\w]+?</script>", "", html)
-        for card_match in re.finditer(
-            r'<div[^>]*class="[^"]*catalog-card[^"]*"[^>]*>[\s\S]*?</a>\s*</div>',
-            text_without_script,
-            re.IGNORECASE,
-        ):
-            card_html = card_match.group()
+        page = Selector(content=html)
 
-            url_m = re.search(r'href="([^"]+)"', card_html)
-            if not url_m:
+        for card in page.css(".catalog-card"):
+            # URL
+            a_tag = card.css("a")
+            if not a_tag:
                 continue
-            url = unescape(url_m.group(1))
+            url = a_tag[0].attrib.get("href", "")
+            if not url:
+                continue
 
-            image_m = re.search(r'src="([^"]+)"', card_html)
-            image_url = unescape(image_m.group(1)) if image_m else ""
+            # Image
+            img = card.css("img")
+            image_url = img[0].attrib.get("src", "") if img else ""
 
-            name_m = re.search(r'card-title[^>]*>(.*?)</h2>', card_html, re.IGNORECASE)
-            name = unescape(name_m.group(1).strip()) if name_m else ""
+            # Nom principal
+            title_el = card.css(".card-title")
+            name = title_el[0].text.clean() if title_el and title_el[0].text else ""
 
-            alt_m = re.search(
-                r'alternate-titles[^>]*>(.*?)</p>', card_html, re.IGNORECASE
-            )
-            alt_names_raw = unescape(alt_m.group(1)) if alt_m else ""
-            alternative_names = (
-                [a.strip() for a in alt_names_raw.split(",") if a.strip()]
-                if alt_names_raw
-                else []
-            )
+            # Noms alternatifs
+            alt_el = card.find("p", class_="alternate-titles")
+            if alt_el and alt_el.text:
+                alt_names_raw = alt_el.text.clean()
+                alternative_names = [a.strip() for a in alt_names_raw.split(",") if a.strip()]
+            else:
+                alternative_names = []
 
+            # Info rows (genres, catégories, langues)
             genres: list[str] = []
-            genre_rows = re.findall(
-                r'<div class="info-row">[\s\S]*?</div>\s*</div>', card_html
-            )
-            for row in genre_rows:
-                label_m = re.search(
-                    r'info-label[^>]*>[\s\S]*?Genres[\s\S]*?</span>', row, re.IGNORECASE
-                )
-                if label_m:
-                    genres = [
-                        unescape(t.strip())
-                        for t in re.findall(
-                            r'genre-tag[^>]*>([^<]+)', row
-                        )
-                        if t.strip()
-                    ]
-                    break
-
             categories: list[str] = []
-            for row in genre_rows:
-                label_m = re.search(
-                    r'info-label[^>]*>[\s\S]*?Types?[\s\S]*?</span>',
-                    row,
-                    re.IGNORECASE,
-                )
-                if label_m:
-                    type_vals = re.findall(r'info-value[^>]*>([^<]+)', row)
-                    for val in type_vals:
-                        parts = [v.strip() for v in val.split(",") if v.strip()]
-                        categories.extend(parts)
-                    break
-
             languages: list[str] = []
-            for row in genre_rows:
-                label_m = re.search(
-                    r'info-label[^>]*>[\s\S]*?Langues[\s\S]*?</span>',
-                    row,
-                    re.IGNORECASE,
-                )
-                if label_m:
-                    flag_titles = re.findall(r'lang-flag[^>]*title="([^"]+)"', row)
-                    for title in flag_titles:
-                        lang = self._flag_title_to_lang(title)
+
+            for row in card.css(".info-row"):
+                label_el = row.css(".info-label")
+                if not label_el:
+                    continue
+                label_text = label_el[0].text.clean() if label_el[0].text else ""
+
+                if "Genres" in label_text:
+                    genres = [
+                        tag.text.clean()
+                        for tag in row.css(".genre-tag")
+                        if tag.text and tag.text.clean()
+                    ]
+                elif re.search(r"Types?", label_text, re.IGNORECASE):
+                    val_el = row.css(".info-value")
+                    for val in val_el:
+                        raw = val.text.clean() if val.text else ""
+                        parts = [v.strip() for v in raw.split(",") if v.strip()]
+                        categories.extend(parts)
+                elif "Langues" in label_text:
+                    for flag_el in row.css(".lang-flag"):
+                        title_attr = flag_el.attrib.get("title", "")
+                        lang = self._flag_title_to_lang(title_attr)
                         if lang:
                             languages.append(lang)
-                    break
 
             _category_fix = {"Autre": "Autres", "Animes": "Anime", "Films": "Film"}
             categories = [_category_fix.get(c.strip(), c.strip()) for c in categories if c.strip()]
@@ -211,39 +196,31 @@ class AnimeSama:
         return flagid2lang.get(title.strip().lower())
 
     def _yield_release_episodes_from(self, html: str) -> Generator[EpisodeRelease]:
-        for card_match in re.finditer(
-            r'<div[^>]*class="[^"]*anime-card-premium[^"]*"[^>]*>[\s\S]*?</a>\s*</div>',
-            html,
-            re.IGNORECASE,
-        ):
-            card_html = card_match.group()
-            url_m = re.search(r'href="([^"]+)"', card_html)
-            if not url_m:
+        page = Selector(content=html)
+
+        for card in page.css(".anime-card-premium"):
+            a_tag = card.css("a")
+            if not a_tag:
                 continue
-            season_url = unescape(url_m.group(1))
+            season_url = a_tag[0].attrib.get("href", "")
+            if not season_url:
+                continue
 
-            image_m = re.search(r'src="([^"]+)"', card_html)
-            image_url = unescape(image_m.group(1)) if image_m else ""
+            img = card.css("img")
+            image_url = img[0].attrib.get("src", "") if img else ""
+            serie_name = img[0].attrib.get("alt", "").strip() if img else ""
 
-            alt_m = re.search(r'alt="([^"]*)"', card_html)
-            serie_name = unescape(alt_m.group(1).strip()) if alt_m else ""
+            # Badge de catégorie
+            badge_els = card.css(".badge-text")
+            category_raw = badge_els[0].text.clean() if badge_els and badge_els[0].text else "Anime"
 
-            badge_m = re.search(
-                r'badge-text[^>]*>([^<]+)', card_html, re.IGNORECASE
-            )
-            category_raw = unescape(badge_m.group(1).strip()) if badge_m else "Anime"
+            # Badge de langue (language-badge-top)
+            lang_badge = card.css(".language-badge-top .badge-text")
+            language = lang_badge[0].text.clean() if lang_badge and lang_badge[0].text else "VOSTFR"
 
-            lang_m = re.search(
-                r'language-badge-top[\s\S]*?badge-text[^>]*>([^<]+)',
-                card_html,
-                re.IGNORECASE,
-            )
-            language = unescape(lang_m.group(1).strip()) if lang_m else "VOSTFR"
-
-            info_m = re.search(
-                r'info-text[^>]*>([^<]+)', card_html, re.IGNORECASE
-            )
-            descriptive = unescape(info_m.group(1).strip()) if info_m else ""
+            # Texte d'info (descriptif de l'épisode)
+            info_el = card.css(".info-text")
+            descriptive = info_el[0].text.clean() if info_el and info_el[0].text else ""
 
             categories = [category_raw]
             _category_fix = {"Autre": "Autres", "Animes": "Anime", "Films": "Film"}
@@ -332,7 +309,7 @@ class AnimeSama:
 
     def _parse_planning(self, html: str) -> list[PlanningDay]:
         """Parse la page planning et retourne la liste des jours avec leurs entrées."""
-        text = re.sub(r"<script[\W\w]+?</script>", "", html)
+        page = Selector(content=html)
         base_url = self.site_url.rstrip("/")
         days_order = (
             "Lundi",
@@ -345,51 +322,67 @@ class AnimeSama:
         )
         result: list[PlanningDay] = []
 
-        # Trouver les sections par jour : <h2 ...>Lundi</h2> etc.
-        day_pattern = re.compile(
-            r'<h2[^>]*titreJours[^>]*>\s*('
-            + "|".join(re.escape(d) for d in days_order)
-            + r')\s*</h2>',
-            re.IGNORECASE,
-        )
-        day_matches = list(day_pattern.finditer(text))
+        # Trouver les h2 de jours de la semaine (class contenant "titreJours")
+        day_headers = page.css("h2.titreJours") or page.find_all("h2", class_="titreJours")
 
-        for i, day_match in enumerate(day_matches):
-            day_name = day_match.group(1).strip()
-            start = day_match.end()
-            end = day_matches[i + 1].start() if i + 1 < len(day_matches) else len(text)
-            section = text[start:end]
+        for header in day_headers:
+            day_name_raw = header.text.clean() if header.text else ""
+            day_name = day_name_raw.strip()
 
-            # Date du jour (DD/MM)
-            date_match = re.search(r"(\d{1,2}/\d{1,2})", section)
-            date_str = date_match.group(1) if date_match else ""
+            if day_name not in days_order:
+                continue
 
-            # Cartes : uniquement Anime (pas les Scans)
-            card_pattern = re.compile(
-                r'<div[^>]*\b(Anime|Scans)\s+(VOSTFR|VF|VJ)[^>]*\bplanning-card\b'
-                r'[^>]*data-title="([^"]*)"[^>]*>'
-                r'[\s\S]*?href="(/catalogue/[^"]+)"'
-                r'[\s\S]*?card-title[^>]*>([^<]+)'
-                r'(?:[\s\S]*?info-text[^>]*>([^<]+))?',
-                re.IGNORECASE,
-            )
+            # Date du jour : chercher dans le parent/section suivante
+            # On récupère le texte suivant (DD/MM) proche du h2
+            date_str = ""
+            parent = header.parent
+            if parent:
+                date_match = re.search(r"(\d{1,2}/\d{1,2})", parent.text.clean() if parent.text else "")
+                if date_match:
+                    date_str = date_match.group(1)
+
+            # Cartes de planning dans la section du jour
+            # Les cartes se trouvent généralement dans un container après le h2
             entries_list: list[PlanningEntry] = []
-            for card in card_pattern.finditer(section):
-                kind, lang, _data_title, path, title, time_str = card.groups()
-                if (kind or "").strip().lower() != "anime":
+            section_parent = header.parent or page
+
+            for card in section_parent.css(".planning-card"):
+                # Extraire classe kind (Anime/Scans) et lang (VOSTFR/VF/VJ) depuis les classes
+                card_classes = card.attrib.get("class", "")
+                kind_match = re.search(r"\b(Anime|Scans)\b", card_classes, re.IGNORECASE)
+                lang_match = re.search(r"\b(VOSTFR|VF|VJ)\b", card_classes, re.IGNORECASE)
+
+                kind = kind_match.group(1).capitalize() if kind_match else ""
+                lang = lang_match.group(1).upper() if lang_match else "VOSTFR"
+
+                if kind.lower() != "anime":
                     continue
-                title = unescape(title).strip() if title else ""
-                time_str = (time_str or "").strip()
+
+                # URL
+                link_el = card.css("a")
+                if not link_el:
+                    continue
+                path = link_el[0].attrib.get("href", "")
                 full_url = path if path.startswith("http") else base_url + path
+
+                # Titre
+                title_el = card.css(".card-title")
+                title = title_el[0].text.clean() if title_el and title_el[0].text else ""
+
+                # Heure
+                time_el = card.css(".info-text")
+                time_str = time_el[0].text.clean() if time_el and time_el[0].text else ""
+
                 entries_list.append(
                     PlanningEntry(
                         title=title,
                         kind="Anime",
                         time=time_str,
-                        lang=lang or "VOSTFR",
+                        lang=lang,
                         url=full_url,
                     )
                 )
+
             result.append(
                 PlanningDay(
                     day_name=day_name,

@@ -7,7 +7,7 @@ packages = ["src/anime_sama_api"]
 
 [project]
 name = "anime-sama-cli"
-version = "2.0.1"
+version = "2.0.2"
 description = "Regarder ou télécharger des animés en VF/VOSTFR depuis le terminal (anime-sama.to)"
 readme = "README.md"
 license = "GPL-3.0-or-later"
@@ -31,6 +31,7 @@ dependencies = [
     "httpx>=0.28.1",
     "platformdirs>=4.5.1",
     "rich>=14.2.0",
+    "scrapling",
     "textual>=0.47.0",
     "tomli>=2.2.1 ; python_version < '3.11'",
     "yt-dlp>=2025.8.22",
@@ -58,3 +59,11 @@ dev = [
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "module"
 pythonpath = ["src"]
+
+[tool.uv.workspace]
+members = [
+    "Scrapling",
+]
+
+[tool.uv.sources]
+scrapling = { workspace = true, editable = true }
