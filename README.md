@@ -156,6 +156,23 @@ Si nécessaire, ajoutez `~/.local/bin` à votre `PATH`.
 
 </details>
 
+### Mettre à jour l’outil
+
+**Via pip :**
+```bash
+pip install --upgrade anime-sama-cli
+```
+
+**Via pipx :**
+```bash
+pipx upgrade anime-sama-cli
+```
+
+**Depuis les sources :**
+```bash
+git pull && pip install -e . --upgrade
+```
+
 ### Désinstaller l’outil
 
 **Désinstallation du programme :**
