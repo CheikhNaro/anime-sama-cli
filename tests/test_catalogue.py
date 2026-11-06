@@ -16,10 +16,10 @@ async def test_seasons():
 async def test_avancement():
     assert (
         await catalogue_data.one_piece.advancement()
-        == "La Saga 12 (Elbaf) est prévue pour le 5 avril 2026."
+        == "La suite est prévue pour 2027."
     )
-    assert await catalogue_data.gumball.advancement() == "Aucune donnée."
-    assert await catalogue_data.mha.advancement() == "Aucune donnée."
+    assert await catalogue_data.gumball.advancement() == ""
+    assert await catalogue_data.mha.advancement() == ""
 
 
 @pytest.mark.asyncio
@@ -28,7 +28,7 @@ async def test_correspondance():
         await catalogue_data.one_piece.correspondence()
         == "Episode 1155 -> Chapitre 1125"
     )
-    assert await catalogue_data.gumball.correspondence() == "Aucune donnée."
+    assert await catalogue_data.gumball.correspondence() == ""
     assert (
         await catalogue_data.mha.correspondence()
         == "Saison 8 Épisode 2 -> Chapitre 403"

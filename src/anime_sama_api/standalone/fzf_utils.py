@@ -87,7 +87,7 @@ def _fetch_page_info(page_url: str) -> dict[str, str]:
         raw = html_module.unescape(synopsis_m.group(1).strip())
         result["synopsis"] = raw
     genre_m = re.search(
-        r'<h2[^>]*>Genres</h2>\s*<div[^>]*class="genres-wrap"[^>]*>([\s\S]+?)</div>',
+        r'<div[^>]*class="oe-genres"[^>]*>([\s\S]+?)</div>',
         html,
         re.IGNORECASE,
     )
@@ -96,9 +96,9 @@ def _fetch_page_info(page_url: str) -> dict[str, str]:
         result["genre"] = ", ".join(
             html_module.unescape(g.strip()) for g in genres if g.strip()
         )
-    type_m = re.search(r'<h2[^>]*>(Anime|Scans|Manga|Film)</h2>', html, re.IGNORECASE)
+    type_m = re.search(r'<span[^>]*class="type-badge[^"]*"[^>]*>([^<]+)</span>', html)
     if type_m:
-        result["type"] = type_m.group(1)
+        result["type"] = type_m.group(1).strip()
     return result
 
 

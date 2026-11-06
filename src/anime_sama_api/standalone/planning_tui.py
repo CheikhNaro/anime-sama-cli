@@ -25,14 +25,15 @@ def _extract_synopsis_from_html(html: str) -> str:
     """Extrait le synopsis depuis le HTML de la page catalogue."""
     import html as html_module
 
-    for m in re.finditer(r"Synopsis[\W\w]+?>(.+?)<", html):
-        raw = html_module.unescape(m.group(1).strip())
-        if raw and raw != "Synopsis" and len(raw) > 15:
+    m = re.search(
+        r'<p[^>]*id="synopsisText"[^>]*>(.+?)</p>',
+        html,
+        re.DOTALL,
+    )
+    if m:
+        raw = html_module.unescape(re.sub(r"<[^>]+>", "", m.group(1))).strip()
+        if raw:
             return raw
-
-    m2 = re.search(r"Synopsis\s*</[^>]+>\s*<[^>]+>(.+?)</[^>]+>", html, re.DOTALL)
-    if m2:
-        return html_module.unescape(m2.group(1).strip())
 
     return ""
 

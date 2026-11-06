@@ -8,7 +8,7 @@ from typing import Any, cast, get_args
 from httpx import AsyncClient
 
 from .episode import Episode, Languages, Players
-from .langs import LangId, flagid2lang, lang2ids
+from .langs import FlagId, Lang, LangId, flagid2lang, lang2ids
 from .utils import remove_some_js_comments, split_and_strip, zip_varlen
 
 
@@ -49,7 +49,9 @@ class Season:
             if not match_url:
                 return SeasonLangPage(lang_id=lang_id)
 
-            episodes_js = await self.client.get(page_url + match_url.group(0))
+            episodes_js = await self.client.get(
+                page_url + match_url.group(0), headers={"Referer": page_url}
+            )
 
             if episodes_js.is_error:
                 return SeasonLangPage(lang_id=lang_id)
@@ -63,18 +65,40 @@ class Season:
         )
         pages_dict = {page.lang_id: page for page in pages}
         if pages_dict["vostfr"].html:
-            flag_id_vo = re.findall(
-                r"src=\".+flag_(.+?)\.png\".*?[\n\t]*<p.*?>VO</p>",
-                remove_some_js_comments(pages_dict["vostfr"].html),
-            )[0]
+            flag_id_vo = self._get_vo_language(pages_dict["vostfr"].html)
 
-            for lang_id in lang2ids[flagid2lang[flag_id_vo]]:
-                if not pages_dict[lang_id].html:
-                    pages_dict[lang_id] = replace(pages_dict["vostfr"])  # replace=copy
-                    pages_dict[lang_id].lang_id = lang_id
-                    break
+            if flag_id_vo:
+                for lang_id in lang2ids[flag_id_vo]:
+                    if not pages_dict[lang_id].html:
+                        pages_dict[lang_id] = replace(pages_dict["vostfr"])  # replace=copy
+                        pages_dict[lang_id].lang_id = lang_id
+                        break
 
         return [value for value in pages_dict.values() if value.html]
+
+    @staticmethod
+    def _get_vo_language(html: str) -> Lang | None:
+        """Langue d'origine d'une page vostfr (une page VO sans doublage japonais utilise son propre drapeau)."""
+        # Nouveau sélecteur : <a class="ct-langue ct-langue-active"><span>VOSTFR</span></a>
+        active = re.search(
+            r'ct-langue-active[^>]*>[\s\S]{0,300}?<span>\s*([A-ZÇÉ]+)\s*</span>', html
+        )
+        if active:
+            label = active.group(1).upper()
+            if label != "VOSTFR" and label in get_args(Lang):
+                return cast(Lang, label)
+            return None
+
+        # Ancien format : <img src=".../flag_jp.png"><p>VO</p>
+        without_comments = remove_some_js_comments(html)
+        matches = re.findall(
+            r'src=".+flag_(.+?)\.png".*?[\n\t]*<p.*?>VO</p>',
+            without_comments,
+        )
+        if matches and matches[0] != "jp":
+            return flagid2lang.get(cast(FlagId, matches[0]))
+
+        return None
 
     # TODO: Refactor
     def _get_players_from(self, page: SeasonLangPage) -> list[Players]:

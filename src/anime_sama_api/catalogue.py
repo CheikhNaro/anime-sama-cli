@@ -1,6 +1,6 @@
 import re
 from collections.abc import Sequence
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 from httpx import AsyncClient
 from scrapling.parser import Selector
@@ -99,20 +99,11 @@ class Catalogue:
         html = await self.page()
         page = Selector(content=html)
 
-        # Chercher la section "Actualité" dans les info-rows
-        for row in page.css(".info-row"):
-            label_el = row.css(".info-label")
-            if not label_el:
-                continue
-            label_text = label_el[0].text.clean() if label_el[0].text else ""
-            if "Actualit" in label_text:
-                val_el = row.css(".info-val")
-                if val_el and val_el[0].text:
-                    return val_el[0].text.clean()
-                # Fallback : tout le texte de la row hors label
-                val_el2 = row.css("[class*='info-val']")
-                if val_el2 and val_el2[0].text:
-                    return val_el2[0].text.clean()
+        # <div class="oe-actu"><p><strong>Actualité :</strong> ...</p></div>
+        actu = page.css(".oe-actu p")
+        if actu:
+            text = actu[0].get_all_text()
+            return re.sub(r"^\s*Actualité\s*:\s*", "", text, flags=re.IGNORECASE).strip()
 
         return ""
 
@@ -120,19 +111,12 @@ class Catalogue:
         html = await self.page()
         page = Selector(content=html)
 
-        # Chercher la section "Correspondance" dans les info-rows
-        for row in page.css(".info-row"):
-            label_el = row.css(".info-label")
-            if not label_el:
-                continue
-            label_text = label_el[0].text.clean() if label_el[0].text else ""
-            if "Correspondance" in label_text:
-                val_el = row.css(".info-val")
-                if val_el and val_el[0].text:
-                    return val_el[0].text.clean()
-                val_el2 = row.css("[class*='info-val']")
-                if val_el2 and val_el2[0].text:
-                    return val_el2[0].text.clean()
+        # <p class="oe-correspondance">... : Anime 1155 -> Manga 1125</p>
+        corr = page.css(".oe-correspondance")
+        if corr:
+            text = corr[0].get_all_text()
+            text = re.sub(r"^\s*Correspondance\s*:\s*", "", text, flags=re.IGNORECASE)
+            return text.strip()
 
         return ""
 
@@ -142,33 +126,15 @@ class Catalogue:
 
         # Synopsis dans l'élément #synopsisText
         synopsis_el = page.css("#synopsisText")
-        if synopsis_el and synopsis_el[0].text:
-            return synopsis_el[0].text.clean()
-
-        # Fallback : chercher le paragraphe après le h2 Synopsis
-        h2_list = page.find_all("h2", re.compile(r"Synopsis", re.IGNORECASE))
-        if h2_list:
-            # Chercher le premier <p> frère ou descendant suivant
-            parent = h2_list[0].parent
-            if parent:
-                p_els = parent.css("p")
-                if p_els and p_els[0].text:
-                    return p_els[0].text.clean()
+        if synopsis_el:
+            return synopsis_el[0].get_all_text().strip()
 
         return ""
 
     async def is_mature(self) -> bool:
         """Return True if the catalogue contain a warning about adult content"""
         html = await self.page()
-        page = Selector(content=html)
-
-        # Chercher une div avec classe contenant "yellow" et le texte "public averti"
-        for div in page.css("div[class*='yellow']"):
-            text = div.text.clean() if div.text else ""
-            if "public averti" in text.lower():
-                return True
-
-        return False
+        return "public averti" in html.lower()
 
     @property
     def is_anime(self) -> bool:
